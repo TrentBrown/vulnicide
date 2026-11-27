@@ -130,10 +130,43 @@ export function countedResults(sarif, engine, severityThreshold) {
     });
 }
 
-async function readCodeExcludes(context) {
-    const policy = await readSnykPolicy(context.readProjectPath('.snyk'));
-    const { global, code } = collectCodeExcludes(policy);
-    return [...global, ...code].filter((pattern) => typeof pattern === 'string' && pattern.trim());
+// .snyk exclusions for an Opengrep scan. A policy that can't be read or
+// parsed, or whose exclude lists aren't lists of strings, is an error: it
+// must never silently scan files the project meant to exclude.
+// Returns { excludes } or { error }.
+export async function readCodeExcludes(policyPath) {
+    if (!await fileExists(policyPath)) return { excludes: [] };
+    let policy;
+    try {
+        policy = loadYaml(await fs.readFile(policyPath, 'utf-8')) ?? {};
+    } catch (error) {
+        return { error: `The .snyk policy could not be read, so its code exclusions can't be applied: ${error.message}` };
+    }
+    if (typeof policy !== 'object' || Array.isArray(policy)) {
+        return { error: 'The .snyk policy is not a YAML mapping, so its code exclusions can\'t be applied.' };
+    }
+    const exclude = policy.exclude ?? {};
+    if (typeof exclude !== 'object' || Array.isArray(exclude)) {
+        return { error: 'The .snyk policy\'s exclude section must be a mapping with global and/or code lists.' };
+    }
+    const excludes = [];
+    for (const section of ['global', 'code']) {
+        const list = exclude[section];
+        if (list === undefined || list === null) continue;
+        if (!Array.isArray(list) || !list.every((pattern) => typeof pattern === 'string' && pattern.trim())) {
+            return { error: `The .snyk policy's exclude.${section} must be a list of path patterns (strings).` };
+        }
+        excludes.push(...list);
+    }
+    return { excludes };
+}
+
+async function runOpengrepWithPolicy(plan, context) {
+    const policy = await readCodeExcludes(context.readProjectPath('.snyk'));
+    if (policy.error) {
+        return { engine: 'opengrep', engineVersion: null, status: 'error', reason: null, message: policy.error, sarif: null };
+    }
+    return runOpengrepScan({ cwd: context.targetDir, ruleConfigs: plan.ruleConfigs, excludes: policy.excludes });
 }
 
 async function buildCode(plan, context) {
@@ -147,18 +180,19 @@ async function buildCode(plan, context) {
     const scanResultPath = context.joinProjectPath(buildDir, 'code', 'scan-result.json');
 
     await ensureDirectory(codeBuildDir);
-    // Remove the previous run's outputs first, so a failed scan can never
-    // leave an older audit looking current.
-    await removeFiles([...Object.values(outputPaths), scanResultPath]);
+    // Remove the previous run's outputs (and packets built from them) first,
+    // so a failed scan can never leave an older audit looking current.
+    await removeFiles([
+        ...Object.values(outputPaths),
+        scanResultPath,
+        context.joinProjectPath(buildDir, 'code', 'remediation-packets.json'),
+        context.joinProjectPath(buildDir, 'code', 'remediation-packets.md')
+    ]);
 
     console.log(`Building code audit report for ${context.targetDir} with ${ENGINE_LABELS[engine]}...`);
 
     const scan = engine === 'opengrep'
-        ? await runOpengrepScan({
-            cwd: context.targetDir,
-            ruleConfigs: plan.ruleConfigs,
-            excludes: await readCodeExcludes(context)
-        })
+        ? await runOpengrepWithPolicy(plan, context)
         : await runSnykCodeScan({
             cwd: context.targetDir,
             severityThreshold,
@@ -507,9 +541,10 @@ export function classifyCodePacket(result, rule, primaryLocation, cwes = ruleMet
 }
 
 function collectCodeExcludes(snykPolicy) {
+    const list = (value) => (Array.isArray(value) ? value.filter((pattern) => typeof pattern === 'string') : []);
     return {
-        global: snykPolicy?.exclude?.global || [],
-        code: snykPolicy?.exclude?.code || []
+        global: list(snykPolicy?.exclude?.global),
+        code: list(snykPolicy?.exclude?.code)
     };
 }
 

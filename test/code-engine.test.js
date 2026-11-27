@@ -387,6 +387,40 @@ for (const command of COMMANDS) {
     });
 }
 
+const MALFORMED_POLICIES = {
+    'unparseable YAML': 'version: v1.25.0\nexclude:\n  code: [unterminated\n',
+    'exclude.code as a mapping': 'version: v1.25.0\nexclude:\n  code:\n    src: true\n',
+    'exclude.global as a scalar': 'version: v1.25.0\nexclude:\n  global: dist/**\n'
+};
+
+for (const command of COMMANDS) {
+    for (const [name, policy] of Object.entries(MALFORMED_POLICIES)) {
+        test(`R2/R4 ${command}: a .snyk with ${name} is an error, never a scan without its exclusions`, () => {
+            const dir = target();
+            assert.equal(code('build', dir).status, 1);
+            fs.writeFileSync(path.join(dir, '.snyk'), policy);
+            const result = code(command, dir);
+            assert.equal(result.status, 3, result.output);
+            assert.equal(result.calls.filter((call) => call.tool === 'opengrep').length, 0, 'no scan without the policy');
+            const outcome = readOutcome(dir);
+            assert.equal(outcome.outcome, 'error');
+            assert.match(outcome.message, /\.snyk/);
+            assertNoCodeOutputs(dir);
+        });
+    }
+
+    test(`R5 ${command}: packets from an earlier run are removed with its audit`, () => {
+        const dir = target();
+        assert.equal(code('build', dir).status, 1);
+        assert.equal(run(['code', 'explain', '--target', dir]).status, 0);
+        assert.ok(fs.existsSync(path.join(codeDir(dir), 'remediation-packets.json')));
+        assert.equal(code(command, dir, [], { env: ERROR_ENV.opengrep }).status, 3);
+        for (const file of ['remediation-packets.json', 'remediation-packets.md']) {
+            assert.ok(!fs.existsSync(path.join(codeDir(dir), file)), `${file} survived a failed run`);
+        }
+    });
+}
+
 // --- AC4 / R6: failure classification ---------------------------------------
 
 const FAILURE_ROWS = [

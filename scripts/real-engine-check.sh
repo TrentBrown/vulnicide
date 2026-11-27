@@ -39,7 +39,8 @@ expect "engine opengrep, outcome findings" "$(echo "$outcome" | grep -q "opengre
 rules="$(json "$WORK/one/build/code/audit-code.json" "sorted({r['ruleId'] for r in d['runs'][0]['results']})")"
 echo "rules found: $rules"
 expect "command injection in src/server.js is reported" "$(echo "$rules" | grep -q "detect-child-process"; echo $?)"
-expect "report is self-contained" "$(grep -q -i -E '<link|src=|@import|url\(' "$WORK/one/build/code/audit-code.html"; [ $? -ne 0 ]; echo $?)"
+expect "report written" "$([ -s "$WORK/one/build/code/audit-code.html" ]; echo $?)"
+expect "report is self-contained" "$([ -s "$WORK/one/build/code/audit-code.html" ] && ! grep -q -i -E '<link|src=|@import|url\(' "$WORK/one/build/code/audit-code.html"; echo $?)"
 vulnicide code explain --target "$WORK/one" >/dev/null
 packets="$(json "$WORK/one/build/code/remediation-packets.json" "d['schemaVersion'], d['source']['engine'], [(p['rule']['cwe'], p['classification']) for p in d['packets']]")"
 echo "packets: $packets"

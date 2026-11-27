@@ -146,7 +146,9 @@ fully offline scan:
 For Opengrep, vulnicide passes each `exclude.global` and `exclude.code`
 pattern as `--exclude`. Inline `nosemgrep` comments are ignored
 (`--disable-nosem`), and so are `.semgrepignore` files and Opengrep's built-in
-ignore list. See [docs/remediation.md](docs/remediation.md).
+ignore list. If `.snyk` can't be parsed, or its `exclude.global`/`exclude.code`
+isn't a list of patterns, the Opengrep scan ends as `error` rather than running
+without the exclusions. See [docs/remediation.md](docs/remediation.md).
 
 ### Scan outcomes and exit codes
 
