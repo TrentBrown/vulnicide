@@ -251,6 +251,13 @@ and command-injection/XSS sample code). The repo's own `.snyk` excludes `test/`
 from Code scans. To dependency-scan this repo itself, run `snyk test` at the
 root, or pass `--exclude=fixtures` with `--all-projects`.
 
+`bash scripts/real-engine-check.sh` runs this checkout's CLI against a real
+Opengrep (2.1.0 or newer on `PATH`, network for the `p/default` rule pack, no
+stubs). It checks the findings outcome and the v2 packets, an unknown rule pack
+(`unavailable`/`rules-unavailable`), and `.snyk` exclusions, and exits non-zero
+if any expectation fails. Run it after changing the Opengrep integration or
+raising the minimum version.
+
 To refresh the Snyk fixtures, run the CLI against copies of the sample targets
 with the real `snyk`. Copy the resulting `build/*/audit-*.json` over
 `test/fixtures/snyk/`, and scrub `org` and `path`. The Opengrep fixtures come

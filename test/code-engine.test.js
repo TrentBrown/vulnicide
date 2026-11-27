@@ -555,10 +555,10 @@ for (const command of COMMANDS) {
     }
 }
 
-test('R8: code browse hands the report URL to the opener', async () => {
+for (const command of COMMANDS) test(`R8 ${command}: code browse hands the report URL to the opener`, async () => {
     for (const engine of ENGINES) {
         const dir = target();
-        code('build', dir, ['--engine', engine]);
+        code(command, dir, ['--engine', engine]);
         const opened = [];
         const context = getCommandContext({ opts: () => ({ target: dir }) });
         await browseCode(context, async (url) => { opened.push(url); });
@@ -566,10 +566,10 @@ test('R8: code browse hands the report URL to the opener', async () => {
     }
 });
 
-test('R8: the summary page labels the code report with its engine', () => {
+for (const command of COMMANDS) test(`R8 ${command}: the summary page labels the code report with its engine`, () => {
     for (const [engine, label] of [['opengrep', 'Opengrep'], ['snyk', 'Snyk Code']]) {
         const dir = target();
-        code('build', dir, ['--engine', engine]);
+        code(command, dir, ['--engine', engine]);
         assert.equal(run(['summary', 'build', '--target', dir]).status, 0);
         const html = fs.readFileSync(path.join(dir, 'vuln', 'dist', 'index.html'), 'utf-8');
         assert.ok(html.includes(`audit-code.html (${label})`), `${engine}: ${html}`);
