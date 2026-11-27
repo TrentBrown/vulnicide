@@ -121,6 +121,7 @@ async function buildSummary(context) {
     // Check for code reports
     const codeDir = path.join(buildDir, 'code');
     if (await directoryExists(codeDir)) {
+        const engineLabel = await readCodeEngineLabel(codeDir);
         const files = await fs.readdir(codeDir);
         for (const file of files) {
             if (file.endsWith('.html')) {
@@ -128,7 +129,7 @@ async function buildSummary(context) {
                 const dstFile = `${getProjectId(config, context)}-${file}`;
                 const dstPath = context.joinProjectPath(getDistDirPath(config), dstFile);
                 await copyFile(srcPath, dstPath);
-                reports.push({ name: file, path: dstFile });
+                reports.push({ name: engineLabel ? `${file} (${engineLabel})` : file, path: dstFile });
             }
         }
     }
@@ -150,6 +151,16 @@ async function buildSummary(context) {
     console.log('Built summary report');
     if (reports.length === 0) {
         console.log(chalk.yellow('No vulnerability reports found. Run "vulnicide deps build" or "vulnicide code build" first.'));
+    }
+}
+
+// Which engine produced the code report, from build/code/scan-result.json.
+async function readCodeEngineLabel(codeDir) {
+    try {
+        const result = JSON.parse(await fs.readFile(path.join(codeDir, 'scan-result.json'), 'utf-8'));
+        return { opengrep: 'Opengrep', snyk: 'Snyk Code' }[result.engine] || null;
+    } catch {
+        return null;
     }
 }
 

@@ -1,7 +1,9 @@
 # CLAUDE.md
 
 Guidance for agents working in this repository: the `vulnicide` CLI (package
-`@trentbrown/vulnicide`), which drives Snyk's `snyk` CLI.
+`@trentbrown/vulnicide`). It drives Opengrep (`opengrep`, the default local
+code engine) and Snyk's `snyk` CLI (dependencies, and code with
+`--engine snyk`).
 
 ## Layout
 
@@ -13,8 +15,11 @@ Guidance for agents working in this repository: the `vulnicide` CLI (package
   remediation packets. `gate.js` is `deps gate --json`, GateReeve's
   dependency-scan gate scanner: JSON request on stdin, normalized findings on
   stdout, unavailability as data, no writes, no raw Snyk error text.
-- `src/utils/`: `snyk.js` (spawns `snyk`/`snyk-to-html`; `spawnSnyk` never
-  throws, for the gate), `upgrade-advice.js` (shared by explain and gate), `context.js`
+- `src/utils/`: `opengrep.js` (version gate, scan arguments, failure
+  classification), `snyk.js` (spawns `snyk`/`snyk-to-html`; `spawnSnyk` never
+  throws, for the gate; `runSnykCodeScan` classifies Snyk Code failures),
+  `upgrade-advice.js` (shared by explain and gate), `code-report.js`
+  (self-contained Opengrep HTML), `process.js` (spawn and capture), `context.js`
   (`--target` resolution; `joinProjectPath` for anything written or deleted,
   symlink-checked; `readProjectPath` for read-only inputs), `config.js` (`.vulnrc.json` / package.json `vuln`),
   `browser.js` (opening, honouring `VULN_NO_OPEN`), `paths.js` (package-root
@@ -25,8 +30,11 @@ Guidance for agents working in this repository: the `vulnicide` CLI (package
   `scripts/install-skills.js` copies it into `~/.codex` and `~/.agents`.
 - `docs/`: `remediation.md` (policy and workflow), `prerequisites.md`,
   `test-usage.md` (Snyk plan-limit accounting).
-- `test/`: offline smoke and gate tests, stub Snyk binaries (with
-  `VULN_STUB_MODE` failure modes), sample targets and captured Snyk JSON.
+- `test/`: offline smoke and gate tests, `code-engine.test.js` (both code
+  engines), stub `opengrep`/`snyk`/`snyk-to-html` binaries (the Snyk stub has
+  `VULN_STUB_MODE` failure modes), sample targets, captured Snyk JSON and
+  Opengrep SARIF (`test/fixtures/opengrep/README.md` records their provenance
+  and hand edits).
 
 ## Rules
 
@@ -35,9 +43,14 @@ Guidance for agents working in this repository: the `vulnicide` CLI (package
 - Keep everything generic. No client names, hostnames, account IDs, org IDs or
   client-specific `.snyk` exclusions in the template, docs, examples or
   fixtures. Project-specific policy belongs in the target repo.
-- `npm test` must stay offline and spend no Snyk quota. A command-behaviour
-  change needs smoke-test coverage. Refresh fixtures from a real run (README →
-  Development) and scrub `org`/`path`.
+- `npm test` must stay offline, spend no Snyk quota and need no real
+  `opengrep`. A command-behaviour change needs smoke-test coverage. Refresh
+  fixtures from a real run (README → Development) and scrub `org`/`path`.
+  Opengrep rule IDs from a local rules file embed that file's absolute path;
+  scrub it.
+- `code build`/`rebuild` end in one outcome (`build/code/scan-result.json`,
+  exit 0 clean / 1 findings / 2 unavailable / 3 error; 64 for usage errors).
+  Never write an engine error as `audit-code.json`.
 - The fixtures under `test/fixtures` are deliberately vulnerable. Don't
   "fix" them.
 - User-facing hints say `vulnicide ...`, not `npm run cli -- ...`.

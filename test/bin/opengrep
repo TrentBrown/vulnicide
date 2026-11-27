@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+// Offline stand-in for Opengrep's CLI, used only by the smoke test.
+// It replays SARIF captured from real Opengrep 2.1.0 runs
+// (test/fixtures/opengrep/README.md), so `npm test` needs no network.
+//
+// Environment controls (all optional):
+//   VULN_STUB_LOG               append {cwd, args, metrics} per call (JSON lines)
+//   VULN_STUB_OPENGREP_VERSION  what `--version` prints (default: captured 2.1.0)
+//   VULN_STUB_OPENGREP_FIXTURE  SARIF file in test/fixtures/opengrep to replay
+//   VULN_STUB_OPENGREP_EXIT     exit code for a scan (default: per fixture)
+//   VULN_STUB_OPENGREP_RAW      print this text instead of a fixture
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'opengrep');
+const args = process.argv.slice(2);
+
+if (process.env.VULN_STUB_LOG) {
+    fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({
+        tool: 'opengrep',
+        cwd: process.cwd(),
+        args,
+        metrics: process.env.SEMGREP_SEND_METRICS ?? null
+    })}\n`);
+}
+
+if (args[0] === '--version') {
+    const version = process.env.VULN_STUB_OPENGREP_VERSION
+        ?? fs.readFileSync(path.join(fixtures, 'version.txt'), 'utf-8').trim();
+    process.stdout.write(`${version}\n`);
+    process.exit(0);
+}
+
+if (args[0] !== 'scan') {
+    console.error(`opengrep stub: unsupported arguments: ${args.join(' ')}`);
+    process.exit(2);
+}
+
+// Exit codes the real binary gave for each captured case.
+const CAPTURED_EXIT = {
+    'pack-404.sarif.json': 2,
+    'registry-500.sarif.json': 2,
+    'unreachable.sarif.json': 2,
+    'invalid-rule.sarif.json': 2,
+    'invalid-yaml.sarif.json': 7
+};
+
+// Real Opengrep warns on stderr about --x- options; mirror that.
+console.error("[00.05][WARNING]: !!! You're using one or more options starting with '--x-'. These options are not part of the opengrep API. They will change or will be removed without notice !!!");
+
+if (process.env.VULN_STUB_OPENGREP_RAW !== undefined) {
+    process.stdout.write(process.env.VULN_STUB_OPENGREP_RAW);
+    process.exitCode = Number(process.env.VULN_STUB_OPENGREP_EXIT ?? 2);
+} else {
+    const fixture = process.env.VULN_STUB_OPENGREP_FIXTURE
+        || (fs.existsSync('package.json') ? 'node.sarif.json' : 'python.sarif.json');
+    process.stdout.write(fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
+    // Set exitCode rather than calling process.exit() so piped stdout flushes.
+    process.exitCode = Number(process.env.VULN_STUB_OPENGREP_EXIT ?? CAPTURED_EXIT[fixture] ?? 0);
+}

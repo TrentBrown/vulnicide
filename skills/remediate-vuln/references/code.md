@@ -2,6 +2,12 @@
 
 Use this reference for packets whose IDs start with `C-`.
 
+The packet's `source.engine` says which scanner produced it: `opengrep`
+(default, local) or `snyk` (Snyk Code). The workflow is the same for both. The
+rule's `cwe`, `owasp` and `confidence` fields, when present, help judge the
+weakness. Snyk-only fields (`priorityScore`, `isAutofixable`) are null or
+false for Opengrep.
+
 ## Inspect
 
 Read:
@@ -27,11 +33,14 @@ Prefer this order:
    but needs isolation.
 4. `mitigated.js` extraction plus `.snyk` `exclude.code` only for accepted
    risk, false positive, generated code, test-only code, deprecated non-runtime
-   code, or a mitigation Snyk cannot recognize.
+   code, or a mitigation the scanner cannot recognize.
 
-Do not imply that `.snyk` can exclude individual code blocks or lines. Snyk
-Code exclusions are file/path based. When exclusion is necessary, factor the
-reviewed code into a peer `mitigated.js` file and exclude that whole file.
+Do not imply that `.snyk` can exclude individual code blocks or lines. Code
+exclusions are file/path based for both engines. Never add inline
+`nosemgrep`/`nosem` comments: vulnicide runs Opengrep with `--disable-nosem`,
+so they suppress nothing, and `.snyk` is the one auditable suppression record.
+When exclusion is necessary, factor the reviewed code into a peer
+`mitigated.js` file and exclude that whole file.
 
 ## Common Fix Patterns
 
@@ -73,7 +82,7 @@ passing raw request values to filesystem APIs.
 ## Last-Resort Mitigated File Pattern
 
 Use this only after deciding that direct remediation is not practical, not worth
-the risk/cost, or not recognized by Snyk after a real mitigation.
+the risk/cost, or not recognized by the scanner after a real mitigation.
 
 Pattern:
 
@@ -85,9 +94,9 @@ Pattern:
 5. Import or require that function back into the original module.
 6. Add the relative `mitigated.js` path to `.snyk` under `exclude.code`, if it
    is not already present.
-7. Add a nearby `.snyk` comment block documenting the Snyk rule ID, CWE when
-   known, original file/function, why direct remediation was not chosen or why
-   Snyk still flags the mitigated code, and the revisit condition.
+7. Add a nearby `.snyk` comment block documenting the engine and rule ID, CWE
+   when known, original file/function, why direct remediation was not chosen or
+   why the scanner still flags the mitigated code, and the revisit condition.
 
 Examples of this convention:
 
@@ -102,7 +111,10 @@ that file rather than creating another mitigation file.
 After editing:
 
 1. Run focused unit tests or the smallest available route/test command.
-2. Run `code build` with the same `--target`.
+2. Run `code build` with the same `--target` and the same engine. It exits 0
+   (clean) or 1 (findings). Exit 2 (unavailable) or 3 (error) means the scan
+   didn't produce a usable result: read `build/code/scan-result.json` and fix
+   that first, never read it as "the finding is gone".
 3. Run `code explain` with the same `--target`.
 4. Confirm the packet disappeared or explain why residual packets remain.
 
@@ -113,7 +125,7 @@ If `.snyk` `exclude.code` is necessary, it must point to the whole
 is generated, test-only, deprecated, or otherwise intentionally outside runtime
 scope. Include nearby comments with:
 
-- Snyk rule ID
+- engine and rule ID
 - file and line or function
 - why this is false positive, accepted risk, generated, test-only, or mitigated
 - why a direct code fix is not appropriate

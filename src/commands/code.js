@@ -2,7 +2,10 @@ import chalk from 'chalk';
 import fs from 'fs/promises';
 import {
     loadProjectConfig,
-    getBuildDirPath
+    getBuildDirPath,
+    getCodeEngine,
+    getOpengrepConfig,
+    UsageError
 } from '../utils/config.js';
 import {
     ensureDirectory,
@@ -11,7 +14,9 @@ import {
     joinPath
 } from '../utils/files.js';
 import { openInBrowser } from '../utils/browser.js';
-import { runSnykCodeTest, generateHtmlReport } from '../utils/snyk.js';
+import { runSnykCodeScan, generateHtmlReport } from '../utils/snyk.js';
+import { runOpengrepScan } from '../utils/opengrep.js';
+import { renderOpengrepReport, resultLevel } from '../utils/code-report.js';
 import { getCommandContext } from '../utils/context.js';
 import { REMEDIATION_GUIDE } from '../utils/paths.js';
 import path from 'path';
@@ -24,16 +29,29 @@ const LEVEL_ORDER = {
     none: 0
 };
 
+export const SCAN_RESULT_SCHEMA_VERSION = 1;
+export const OUTCOME_EXIT_CODES = { clean: 0, findings: 1, unavailable: 2, error: 3 };
+// Usage errors (an unknown engine or threshold) get their own exit code so
+// they can't be mistaken for an outcome.
+export const USAGE_EXIT_CODE = 64;
+
+const SEVERITY_THRESHOLDS = ['low', 'medium', 'high'];
+// Lowest SARIF level counted at each threshold.
+const THRESHOLD_MIN_RANK = { low: 0, medium: LEVEL_ORDER.warning, high: LEVEL_ORDER.error };
+const ENGINE_LABELS = { opengrep: 'Opengrep', snyk: 'Snyk Code' };
+const CODE_OUTPUT_FILES = ['audit-code.json', 'audit-code.html', 'audit-code-minimal.json'];
+
 export function codeCommands(program) {
     const code = program.command('code')
-        .description('Manage code vulnerability scanning');
+        .description('Manage code vulnerability scanning (Opengrep by default, or Snyk Code)');
 
     code.command('build')
         .description('Build a code security audit report')
+        .option('--engine <engine>', 'Code analysis engine: opengrep (default, runs locally) or snyk (uploads code to Snyk)')
         .option('--debug', 'Run in debug mode')
-        .option('--severity-threshold <threshold>', 'Report only vulnerabilities at the specified level or higher', 'low')
+        .option('--severity-threshold <threshold>', 'Report only vulnerabilities at the specified level or higher (low, medium, high)', 'low')
         .action(async (options, command) => {
-            await buildCode(options, getCommandContext(command));
+            await runCodeCommand(options, getCommandContext(command), { clean: false });
         });
 
     code.command('browse')
@@ -56,61 +74,216 @@ export function codeCommands(program) {
 
     code.command('rebuild')
         .description('Clean and rebuild code audit')
+        .option('--engine <engine>', 'Code analysis engine: opengrep (default, runs locally) or snyk (uploads code to Snyk)')
         .option('--debug', 'Run in debug mode')
-        .option('--severity-threshold <threshold>', 'Report only vulnerabilities at the specified level or higher', 'low')
+        .option('--severity-threshold <threshold>', 'Report only vulnerabilities at the specified level or higher (low, medium, high)', 'low')
         .action(async (options, command) => {
-            const context = getCommandContext(command);
-            await cleanCode(context);
-            await buildCode(options, context);
+            await runCodeCommand(options, getCommandContext(command), { clean: true });
         });
 }
 
-async function buildCode(options, context) {
-    console.log(`Building code audit report for ${context.targetDir}...`);
+async function runCodeCommand(options, context, { clean }) {
+    let plan;
+    try {
+        // Validate everything the user chose before touching build/code/.
+        plan = await planCodeBuild(options, context);
+    } catch (error) {
+        if (error instanceof UsageError) {
+            console.error(chalk.red(error.message));
+            process.exitCode = USAGE_EXIT_CODE;
+            return;
+        }
+        throw error;
+    }
+    if (clean) await cleanCode(context);
+    const outcome = await buildCode(plan, context);
+    process.exitCode = OUTCOME_EXIT_CODES[outcome.outcome];
+}
 
+async function planCodeBuild(options, context) {
     const config = await loadProjectConfig(context);
-    const buildDir = getBuildDirPath(config);
+    const engine = getCodeEngine(config, options.engine);
+    const severityThreshold = options.severityThreshold || 'low';
+    if (!SEVERITY_THRESHOLDS.includes(severityThreshold)) {
+        throw new UsageError(`Unknown severity threshold "${severityThreshold}". Use one of: ${SEVERITY_THRESHOLDS.join(', ')}.`);
+    }
+    return {
+        config,
+        engine,
+        severityThreshold,
+        ruleConfigs: engine === 'opengrep' ? getOpengrepConfig(config) : null,
+        debug: Boolean(options.debug)
+    };
+}
+
+// Count the results at or above the threshold. Snyk has already applied the
+// threshold itself, so every result in its SARIF counts.
+export function countedResults(sarif, engine, severityThreshold) {
+    const run = sarif?.runs?.[0] || {};
+    const results = run.results || [];
+    if (engine !== 'opengrep') return results;
+    const rules = run.tool?.driver?.rules || [];
+    const minRank = THRESHOLD_MIN_RANK[severityThreshold] ?? 0;
+    return results.filter((result) => {
+        const rule = getRuleForResult(result, rules);
+        return (LEVEL_ORDER[resultLevel(result, rule)] ?? 0) >= minRank;
+    });
+}
+
+// .snyk exclusions for an Opengrep scan. A policy that can't be read or
+// parsed, or whose exclude lists aren't lists of strings, is an error: it
+// must never silently scan files the project meant to exclude.
+// Returns { excludes } or { error }.
+export async function readCodeExcludes(policyPath) {
+    // Only a .snyk that doesn't exist at all means "no exclusions". An entry
+    // that exists but can't be read (for example a symlink to a shared
+    // policy whose target is missing) is an error.
+    try {
+        await fs.lstat(policyPath);
+    } catch (error) {
+        if (error.code === 'ENOENT') return { excludes: [] };
+        return { error: `The .snyk policy could not be read, so its code exclusions can't be applied: ${error.message}` };
+    }
+    let policy;
+    try {
+        policy = loadYaml(await fs.readFile(policyPath, 'utf-8')) ?? {};
+    } catch (error) {
+        return { error: `The .snyk policy could not be read, so its code exclusions can't be applied: ${error.message}` };
+    }
+    if (typeof policy !== 'object' || Array.isArray(policy)) {
+        return { error: 'The .snyk policy is not a YAML mapping, so its code exclusions can\'t be applied.' };
+    }
+    const exclude = policy.exclude ?? {};
+    if (typeof exclude !== 'object' || Array.isArray(exclude)) {
+        return { error: 'The .snyk policy\'s exclude section must be a mapping with global and/or code lists.' };
+    }
+    const excludes = [];
+    for (const section of ['global', 'code']) {
+        const list = exclude[section];
+        if (list === undefined || list === null) continue;
+        if (!Array.isArray(list) || !list.every((pattern) => typeof pattern === 'string' && pattern.trim())) {
+            return { error: `The .snyk policy's exclude.${section} must be a list of path patterns (strings).` };
+        }
+        excludes.push(...list);
+    }
+    return { excludes };
+}
+
+async function runOpengrepWithPolicy(plan, context) {
+    const policy = await readCodeExcludes(context.readProjectPath('.snyk'));
+    if (policy.error) {
+        return { engine: 'opengrep', engineVersion: null, status: 'error', reason: null, message: policy.error, sarif: null };
+    }
+    return runOpengrepScan({ cwd: context.targetDir, ruleConfigs: plan.ruleConfigs, excludes: policy.excludes });
+}
+
+async function buildCode(plan, context) {
+    const startedAt = new Date().toISOString();
+    const { engine, severityThreshold } = plan;
+    const buildDir = getBuildDirPath(plan.config);
+    // joinProjectPath refuses a build directory outside the target (also
+    // through a symlink) before anything is scanned or written.
     const codeBuildDir = context.joinProjectPath(buildDir, 'code');
+    const outputPaths = Object.fromEntries(CODE_OUTPUT_FILES.map((file) => [file, context.joinProjectPath(buildDir, 'code', file)]));
+    const scanResultPath = context.joinProjectPath(buildDir, 'code', 'scan-result.json');
 
     await ensureDirectory(codeBuildDir);
+    // Remove the previous run's outputs (and packets built from them) first,
+    // so a failed scan can never leave an older audit looking current.
+    await removeFiles([
+        ...Object.values(outputPaths),
+        scanResultPath,
+        context.joinProjectPath(buildDir, 'code', 'remediation-packets.json'),
+        context.joinProjectPath(buildDir, 'code', 'remediation-packets.md')
+    ]);
 
-    const jsonFilePath = context.joinProjectPath(buildDir, 'code', 'audit-code.json');
-    const htmlFilePath = context.joinProjectPath(buildDir, 'code', 'audit-code.html');
+    console.log(`Building code audit report for ${context.targetDir} with ${ENGINE_LABELS[engine]}...`);
 
-    const snykOptions = {
-        severityThreshold: options.severityThreshold || 'low',
-        policyPath: context.readProjectPath('.snyk'),
-        cwd: context.targetDir,
-        debug: options.debug
-    };
+    const scan = engine === 'opengrep'
+        ? await runOpengrepWithPolicy(plan, context)
+        : await runSnykCodeScan({
+            cwd: context.targetDir,
+            severityThreshold,
+            policyPath: context.readProjectPath('.snyk'),
+            debug: plan.debug
+        });
 
-    try {
-        const result = await runSnykCodeTest(snykOptions);
-
-        // Write JSON results
-        await fs.writeFile(jsonFilePath, JSON.stringify(result.data, null, 2));
-
-        // Generate HTML report
-        await generateHtmlReport(jsonFilePath, htmlFilePath, { cwd: context.targetDir });
-
-        console.log('...done');
-
-        if (result.success) {
-            console.log(chalk.green(`No issues were found above severity threshold "${snykOptions.severityThreshold}"`));
-        } else {
-            console.log(chalk.red(`Issues above severity threshold "${snykOptions.severityThreshold}" were found. Run "vulnicide code browse${context.targetOption}" to see them.`));
+    let outcome;
+    let message = scan.message;
+    let counts = null;
+    if (scan.status === 'completed') {
+        const counted = countedResults(scan.sarif, engine, severityThreshold);
+        counts = { total: (scan.sarif.runs?.[0]?.results || []).length, counted: counted.length };
+        outcome = counted.length > 0 ? 'findings' : 'clean';
+        try {
+            await writeCodeOutputs({ scan, counted, engine, severityThreshold, outputPaths, context });
+            message = outcome === 'clean'
+                ? `No issues were found at or above severity threshold "${severityThreshold}".`
+                : `${counted.length} issue(s) at or above severity threshold "${severityThreshold}" were found. Run "vulnicide code browse${context.targetOption}" to see them.`;
+            if (scan.message && scan.message !== 'Opengrep scan completed.' && scan.message !== 'Snyk Code scan completed.') {
+                message += ` ${scan.message}`;
+            }
+        } catch (error) {
+            await removeFiles(Object.values(outputPaths));
+            outcome = 'error';
+            counts = null;
+            message = `The scan completed but its reports could not be written: ${error.message}`;
         }
+    } else {
+        outcome = scan.status;
+    }
 
-        // Create minimal JSON file
-        await createMinimalJsonCode(jsonFilePath, context.joinProjectPath(buildDir, 'code', 'audit-code-minimal.json'));
+    const scanResult = {
+        schemaVersion: SCAN_RESULT_SCHEMA_VERSION,
+        engine,
+        engineVersion: scan.engineVersion ?? null,
+        outcome,
+        reason: outcome === 'unavailable' ? scan.reason : null,
+        message,
+        severityThreshold,
+        counts,
+        startedAt,
+        finishedAt: new Date().toISOString()
+    };
+    await fs.writeFile(scanResultPath, `${JSON.stringify(scanResult, null, 2)}\n`);
 
-    } catch (error) {
-        console.error(chalk.red(`Error running code scan: ${error.message}`));
-        process.exit(1);
+    const color = { clean: chalk.green, findings: chalk.red, unavailable: chalk.yellow, error: chalk.red }[outcome];
+    console.log('...done');
+    console.log(color(`[${outcome}${scanResult.reason ? `: ${scanResult.reason}` : ''}] ${message}`));
+    return scanResult;
+}
+
+async function writeCodeOutputs({ scan, counted, engine, severityThreshold, outputPaths, context }) {
+    const jsonFilePath = outputPaths['audit-code.json'];
+    const htmlFilePath = outputPaths['audit-code.html'];
+    // The full SARIF, unfiltered, so `code explain` sees every result.
+    await fs.writeFile(jsonFilePath, JSON.stringify(scan.sarif, null, 2));
+    if (engine === 'opengrep') {
+        await fs.writeFile(htmlFilePath, renderOpengrepReport({
+            sarif: scan.sarif,
+            counted,
+            engineVersion: scan.engineVersion,
+            severityThreshold,
+            generatedAt: new Date().toISOString()
+        }));
+    } else {
+        await generateHtmlReport(jsonFilePath, htmlFilePath, { cwd: context.targetDir });
+    }
+    await fs.writeFile(outputPaths['audit-code-minimal.json'], JSON.stringify({
+        ok: counted.length === 0,
+        issues: counted.length,
+        files: new Set(counted.map((result) => result.locations?.[0]?.physicalLocation?.artifactLocation?.uri).filter(Boolean)).size
+    }, null, 2));
+}
+
+async function removeFiles(paths) {
+    for (const filePath of paths) {
+        await fs.rm(filePath, { force: true });
     }
 }
 
-async function browseCode(context) {
+// `opener` is injectable for tests; the CLI uses openInBrowser.
+export async function browseCode(context, opener = openInBrowser) {
     const config = await loadProjectConfig(context);
     const buildDir = getBuildDirPath(config);
     const htmlFilePath = context.readProjectPath(buildDir, 'code', 'audit-code.html');
@@ -121,7 +294,7 @@ async function browseCode(context) {
         return;
     }
     const url = `file://${absoluteHtmlFilePath}`;
-    await openInBrowser(url);
+    await opener(url);
 }
 
 async function cleanCode(context) {
@@ -145,13 +318,15 @@ async function explainCode(context) {
         return;
     }
 
-    const [audit, packageJson, snykPolicy] = await Promise.all([
+    const [audit, packageJson, snykPolicy, scanResult] = await Promise.all([
         readJson(auditJsonPath),
         readOptionalJson(context.readProjectPath('package.json')),
-        readSnykPolicy(context.readProjectPath('.snyk'))
+        readSnykPolicy(context.readProjectPath('.snyk')),
+        readOptionalJson(joinPath(codeBuildDir, 'scan-result.json'))
     ]);
 
-    const packets = buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, auditJsonPath);
+    const engine = detectEngine(audit, scanResult);
+    const packets = buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, auditJsonPath, engine);
     const packetsJsonPath = context.joinProjectPath(buildDir, 'code', 'remediation-packets.json');
     const packetsMarkdownPath = context.joinProjectPath(buildDir, 'code', 'remediation-packets.md');
 
@@ -163,7 +338,20 @@ async function explainCode(context) {
     console.log(`Markdown: ${packetsMarkdownPath}`);
 }
 
-function buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, auditJsonPath) {
+// The engine that produced the audit: the outcome file when it names one,
+// otherwise the SARIF tool name.
+export function detectEngine(audit, scanResult) {
+    if (scanResult && ENGINE_LABELS[scanResult.engine]) return scanResult.engine;
+    const name = audit?.runs?.[0]?.tool?.driver?.name || '';
+    if (/opengrep/i.test(name)) return 'opengrep';
+    if (/snyk/i.test(name)) return 'snyk';
+    return 'unknown';
+}
+
+export const PACKET_SCHEMA_VERSION = 2;
+
+function buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, auditJsonPath, engine) {
+    const engineLabel = ENGINE_LABELS[engine] || 'code scanner';
     const run = audit.runs?.[0] || {};
     const rules = run.tool?.driver?.rules || [];
     const results = run.results || [];
@@ -173,9 +361,10 @@ function buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, au
         const rule = getRuleForResult(result, rules);
         const primaryLocation = summarizeLocation(result.locations?.[0]);
         const codeFlow = summarizeCodeFlow(result.codeFlows);
-        const level = result.level || rule?.defaultConfiguration?.level || 'none';
+        const level = resultLevel(result, rule);
         const ruleId = result.ruleId || rule?.id || 'unknown';
         const title = getRuleTitle(rule, ruleId);
+        const metadata = ruleMetadata(rule);
 
         return {
             id: null,
@@ -184,6 +373,9 @@ function buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, au
                 name: rule?.name || null,
                 title,
                 level,
+                cwe: metadata.cwe,
+                owasp: metadata.owasp,
+                confidence: metadata.confidence,
                 helpUri: rule?.helpUri || null,
                 helpSummary: summarizeRuleHelp(rule)
             },
@@ -194,7 +386,7 @@ function buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, au
                 priorityScoreFactors: result.properties?.priorityScoreFactors || [],
                 isAutofixable: result.properties?.isAutofixable || false
             },
-            classification: classifyCodePacket(result, rule, primaryLocation),
+            classification: classifyCodePacket(result, rule, primaryLocation, metadata.cwe),
             finding: {
                 message: result.message?.text || result.message?.markdown || '',
                 arguments: result.message?.arguments || [],
@@ -204,7 +396,7 @@ function buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, au
             },
             modelPrompt: [
                 `Use ${REMEDIATION_GUIDE}.`,
-                `Evaluate Snyk Code finding ${ruleId} in ${formatLocation(primaryLocation)}.`,
+                `Evaluate ${engineLabel} finding ${ruleId} in ${formatLocation(primaryLocation)}.`,
                 'Decide whether to remediate with a code change, refactor into a documented mitigation, update code exclusions for accepted risk or false positive, or defer with rationale.',
                 'Propose a small, verifiable next step before editing.'
             ].join(' '),
@@ -225,18 +417,19 @@ function buildCodeRemediationPackets(audit, packageJson, snykPolicy, context, au
     });
 
     return {
-        schemaVersion: 1,
+        schemaVersion: PACKET_SCHEMA_VERSION,
         generatedAt: new Date().toISOString(),
         targetDir: context.targetDir,
         source: {
+            engine,
             auditJson: auditJsonPath,
             projectName: packageJson?.name || path.basename(context.targetDir),
-            tool: run.tool?.driver?.name || 'SnykCode',
+            tool: run.tool?.driver?.name || engineLabel,
             toolVersion: run.tool?.driver?.semanticVersion || run.tool?.driver?.version || null,
             issueCount: results.length,
             fileCount: countUniqueFiles(results),
             ruleSummary: countBy(results, (result) => result.ruleId || 'unknown'),
-            levelSummary: countBy(results, (result) => result.level || 'none'),
+            levelSummary: countBy(results, (result) => resultLevel(result, getRuleForResult(result, rules))),
             fileSummary: countBy(results, (result) => summarizeLocation(result.locations?.[0]).file || 'unknown'),
             policy: {
                 excludedPaths
@@ -300,13 +493,46 @@ function summarizeCodeFlow(codeFlows) {
     return locations.filter((location) => location.file).slice(0, 12);
 }
 
-function classifyCodePacket(result, rule, primaryLocation) {
+// CWE → packet class. When a rule's CWEs match more than one row, the
+// first matching row wins.
+export const CWE_CLASSES = [
+    { cwes: ['CWE-798', 'CWE-259', 'CWE-321'], classification: 'secret-remediation' },
+    { cwes: ['CWE-79', 'CWE-80', 'CWE-1336'], classification: 'output-sanitization' },
+    { cwes: ['CWE-20', 'CWE-22', 'CWE-77', 'CWE-78', 'CWE-89', 'CWE-94', 'CWE-943'], classification: 'input-validation' }
+];
+
+export function classifyByCwe(cwes) {
+    const ids = new Set(cwes || []);
+    return CWE_CLASSES.find((row) => row.cwes.some((cwe) => ids.has(cwe)))?.classification || null;
+}
+
+// CWE IDs, OWASP categories and confidence from a SARIF rule. Opengrep
+// carries them as tags ("CWE-78: ...", "OWASP-A03:2021 - Injection",
+// "HIGH CONFIDENCE"); Snyk carries CWE IDs in properties.cwe.
+export function ruleMetadata(rule) {
+    const tags = Array.isArray(rule?.properties?.tags) ? rule.properties.tags : [];
+    const cwe = [];
+    for (const value of [...tags, ...(Array.isArray(rule?.properties?.cwe) ? rule.properties.cwe : [])]) {
+        const match = /^\s*(CWE-\d+)\b/i.exec(String(value));
+        if (match && !cwe.includes(match[1].toUpperCase())) cwe.push(match[1].toUpperCase());
+    }
+    const owasp = tags
+        .map((tag) => /^OWASP-(.+)$/i.exec(String(tag)))
+        .filter(Boolean)
+        .map((match) => match[1].trim());
+    const confidenceTag = tags.map((tag) => /^(HIGH|MEDIUM|LOW) CONFIDENCE$/i.exec(String(tag))).find(Boolean);
+    return { cwe, owasp, confidence: confidenceTag ? confidenceTag[1].toLowerCase() : null };
+}
+
+export function classifyCodePacket(result, rule, primaryLocation, cwes = ruleMetadata(rule).cwe) {
     const ruleId = result.ruleId || rule?.id || '';
     const file = primaryLocation.file || '';
 
     if (file.includes('/test/') || file.startsWith('test/') || /\.test\./.test(file)) {
         return 'test-code-triage';
     }
+    const byCwe = classifyByCwe(cwes);
+    if (byCwe) return byCwe;
     if (/Hardcoded.*Secret|Hardcoded.*Password|NoHardcodedPasswords/i.test(ruleId)) {
         return 'secret-remediation';
     }
@@ -323,9 +549,10 @@ function classifyCodePacket(result, rule, primaryLocation) {
 }
 
 function collectCodeExcludes(snykPolicy) {
+    const list = (value) => (Array.isArray(value) ? value.filter((pattern) => typeof pattern === 'string') : []);
     return {
-        global: snykPolicy?.exclude?.global || [],
-        code: snykPolicy?.exclude?.code || []
+        global: list(snykPolicy?.exclude?.global),
+        code: list(snykPolicy?.exclude?.code)
     };
 }
 
@@ -458,22 +685,5 @@ async function readSnykPolicy(filePath) {
     } catch (error) {
         console.log(chalk.yellow(`Warning: Could not parse .snyk policy file: ${error.message}`));
         return {};
-    }
-}
-
-async function createMinimalJsonCode(inputPath, outputPath) {
-    try {
-        const content = await fs.readFile(inputPath, 'utf-8');
-        const data = JSON.parse(content);
-
-        const minimal = {
-            ok: data.runs?.[0]?.results?.length === 0 || false,
-            issues: data.runs?.[0]?.results?.length || 0,
-            files: new Set(data.runs?.[0]?.results?.map(r => r.locations?.[0]?.physicalLocation?.artifactLocation?.uri) || []).size
-        };
-
-        await fs.writeFile(outputPath, JSON.stringify(minimal, null, 2));
-    } catch (error) {
-        console.error(chalk.yellow(`Warning: Could not create minimal JSON: ${error.message}`));
     }
 }

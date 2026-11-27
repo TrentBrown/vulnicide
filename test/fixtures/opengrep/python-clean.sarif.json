@@ -1,0 +1,48 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [],
+      "tool": {
+        "driver": {
+          "name": "Opengrep",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "fullDescription": {
+                "text": "A password is hard-coded in source."
+              },
+              "help": {
+                "markdown": "A password is hard-coded in source.",
+                "text": "A password is hard-coded in source."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.js.hardcoded-password",
+              "name": "test.fixtures.opengrep-rules.fixture.js.hardcoded-password",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-798: Use of Hard-coded Credentials",
+                  "LOW CONFIDENCE",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.js.hardcoded-password"
+              }
+            }
+          ],
+          "semanticVersion": "2.1.0"
+        }
+      }
+    }
+  ],
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json"
+}

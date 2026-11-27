@@ -1,0 +1,328 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "codeFlows": [
+            {
+              "message": {
+                "text": "Untrusted dataflow from src/server.js:7 to src/server.js:10"
+              },
+              "threadFlows": [
+                {
+                  "locations": [
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Source: 'req.url' @ 'src/server.js:7'"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "src/server.js"
+                          },
+                          "region": {
+                            "endColumn": 32,
+                            "endLine": 7,
+                            "message": {
+                              "text": "Source: 'req.url' @ 'src/server.js:7'"
+                            },
+                            "snippet": {
+                              "text": "req.url"
+                            },
+                            "startColumn": 25,
+                            "startLine": 7
+                          }
+                        }
+                      },
+                      "nestingLevel": 0
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Propagator : 'url' @ 'src/server.js:7'"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "src/server.js"
+                          },
+                          "region": {
+                            "endColumn": 14,
+                            "endLine": 7,
+                            "message": {
+                              "text": "Propagator : 'url' @ 'src/server.js:7'"
+                            },
+                            "snippet": {
+                              "text": "url"
+                            },
+                            "startColumn": 11,
+                            "startLine": 7
+                          }
+                        }
+                      },
+                      "nestingLevel": 0
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Propagator : 'host' @ 'src/server.js:9'"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "src/server.js"
+                          },
+                          "region": {
+                            "endColumn": 15,
+                            "endLine": 9,
+                            "message": {
+                              "text": "Propagator : 'host' @ 'src/server.js:9'"
+                            },
+                            "snippet": {
+                              "text": "host"
+                            },
+                            "startColumn": 11,
+                            "startLine": 9
+                          }
+                        }
+                      },
+                      "nestingLevel": 0
+                    },
+                    {
+                      "location": {
+                        "message": {
+                          "text": "Sink: ''ping -c 1 ' + host' @ 'src/server.js:10'"
+                        },
+                        "physicalLocation": {
+                          "artifactLocation": {
+                            "uri": "src/server.js"
+                          },
+                          "region": {
+                            "endColumn": 29,
+                            "endLine": 10,
+                            "message": {
+                              "text": "Sink: ''ping -c 1 ' + host' @ 'src/server.js:10'"
+                            },
+                            "snippet": {
+                              "text": "'ping -c 1 ' + host"
+                            },
+                            "startColumn": 10,
+                            "startLine": 10
+                          }
+                        }
+                      },
+                      "nestingLevel": 0
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "fingerprints": {
+            "matchBasedId/v1": "f5ffc44e4f18c0b5debb0cd34599d55d2acf0dd31f467400d6562705efa0d4755868dad04a8611e256ad46744427b3147583fd66729e20bbbd15c182f629c1ac_0"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/server.js",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 29,
+                  "endLine": 10,
+                  "snippet": {
+                    "text": "    exec('ping -c 1 ' + host, (error, stdout) => {"
+                  },
+                  "startColumn": 10,
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Request data reaches a shell command through exec()."
+          },
+          "properties": {},
+          "ruleId": "test.fixtures.opengrep-rules.fixture.js.command-injection-taint"
+        },
+        {
+          "fingerprints": {
+            "matchBasedId/v1": "7511978656ba275ad802e0e1ad1e9800d4f47c48a5d0d28b418d853d070075bf009a2076cc763cdb05d7ff02c1ca61c945042236c281303b32b20d2f2622927f_0"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/server.js",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 70,
+                  "endLine": 11,
+                  "snippet": {
+                    "text": "        res.end('<p>Hello ' + name + '</p><pre>' + stdout + '</pre>');"
+                  },
+                  "startColumn": 9,
+                  "startLine": 11
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Request data is written into an HTML response without escaping."
+          },
+          "properties": {},
+          "ruleId": "test.fixtures.opengrep-rules.fixture.js.reflected-html"
+        },
+        {
+          "fingerprints": {
+            "matchBasedId/v1": "abdb949097811925c7ea79bc7335cc6525df1ef2133eb6560cd53ec7374c795b40c2d44a249d19b41bfe64870c3936c47a97b4289804b51f1e871c0248f8ab50_0"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/server.js",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 42,
+                  "endLine": 16,
+                  "snippet": {
+                    "text": "const DB_PASSWORD = 'not-a-real-password';"
+                  },
+                  "startColumn": 1,
+                  "startLine": 16
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "A password is hard-coded in source."
+          },
+          "properties": {},
+          "ruleId": "test.fixtures.opengrep-rules.fixture.js.hardcoded-password",
+          "level": "error"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Opengrep",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Request data reaches a shell command through exec()."
+              },
+              "help": {
+                "markdown": "Request data reaches a shell command through exec().",
+                "text": "Request data reaches a shell command through exec()."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.js.command-injection-taint",
+              "name": "test.fixtures.opengrep-rules.fixture.js.command-injection-taint",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+                  "HIGH CONFIDENCE",
+                  "OWASP-A03:2021 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.js.command-injection-taint"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "fullDescription": {
+                "text": "A password is hard-coded in source."
+              },
+              "help": {
+                "markdown": "A password is hard-coded in source.",
+                "text": "A password is hard-coded in source."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.js.hardcoded-password",
+              "name": "test.fixtures.opengrep-rules.fixture.js.hardcoded-password",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-798: Use of Hard-coded Credentials",
+                  "LOW CONFIDENCE",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.js.hardcoded-password"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Request data is written into an HTML response without escaping."
+              },
+              "help": {
+                "markdown": "Request data is written into an HTML response without escaping.",
+                "text": "Request data is written into an HTML response without escaping."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.js.reflected-html",
+              "name": "test.fixtures.opengrep-rules.fixture.js.reflected-html",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+                  "MEDIUM CONFIDENCE",
+                  "OWASP-A03:2021 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.js.reflected-html"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "subprocess is called with shell=True on a concatenated command."
+              },
+              "help": {
+                "markdown": "subprocess is called with shell=True on a concatenated command.",
+                "text": "subprocess is called with shell=True on a concatenated command."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.py.shell-true",
+              "name": "test.fixtures.opengrep-rules.fixture.py.shell-true",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+                  "HIGH CONFIDENCE",
+                  "OWASP-A03:2021 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.py.shell-true"
+              }
+            }
+          ],
+          "semanticVersion": "2.1.0"
+        }
+      }
+    }
+  ],
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json"
+}

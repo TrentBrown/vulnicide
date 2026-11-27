@@ -1,8 +1,8 @@
 {
   "name": "@trentbrown/vulnicide",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Snyk-driven vulnerability scanning and model-friendly remediation packets",
+  "description": "Vulnerability CLI: local Opengrep code scanning (or Snyk Code), Snyk dependency scanning, and model-friendly remediation packets",
   "type": "module",
   "repository": {
     "type": "git",
@@ -21,7 +21,8 @@
   ],
   "scripts": {
     "setup": "npm run setup:tools && npm run setup:skills",
-    "setup:tools": "npm install -g snyk snyk-to-html",
+    "setup:tools": "npm install -g snyk snyk-to-html && npm run setup:opengrep",
+    "setup:opengrep": "curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/v2.1.0/install.sh | bash -s -- -v v2.1.0",
     "setup:skills": "node scripts/install-skills.js",
     "cli": "node src/index.js",
     "start": "node ./src/index.js",
@@ -42,6 +43,7 @@
     "scanner",
     "security",
     "snyk",
+    "opengrep",
     "cli"
   ],
   "author": "Trent Brown",

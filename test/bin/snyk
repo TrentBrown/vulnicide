@@ -12,6 +12,12 @@
 //                           no-project-noisy | garbage |
 //                           error | sleep | leak
 //   VULN_STUB_NO_VERSION=1  make `snyk --version` fail
+// For `snyk code test`:
+//   VULN_STUB_SNYK_CODE_FIXTURE  file in test/fixtures/snyk to replay
+//   VULN_STUB_SNYK_CODE_EXIT     exit code (default 1, as when issues are found)
+//   VULN_STUB_SNYK_CODE_STREAM   "stdout" (default) or "stderr"; real Snyk
+//                                prints its error JSON on stderr
+//   VULN_STUB_SNYK_CODE_RAW      print this text instead of a fixture
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -20,7 +26,7 @@ const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const args = process.argv.slice(2);
 
 if (process.env.VULN_STUB_LOG) {
-    fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({ cwd: process.cwd(), args })}\n`);
+    fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({ tool: 'snyk', cwd: process.cwd(), args })}\n`);
 }
 
 // Planted values a leak test looks for in vulnicide's output.
@@ -42,11 +48,13 @@ if (args[0] === '--version') {
         process.stdout.write('1.1300.0\n');
     }
 } else if (args[0] === 'code' && args[1] === 'test') {
-    const fixture = fs.existsSync('package.json') ? 'code-node.sarif.json' : 'code-python.sarif.json';
-    process.stdout.write(fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
+    const fixture = process.env.VULN_STUB_SNYK_CODE_FIXTURE
+        || (fs.existsSync('package.json') ? 'code-node.sarif.json' : 'code-python.sarif.json');
+    const stream = process.env.VULN_STUB_SNYK_CODE_STREAM === 'stderr' ? process.stderr : process.stdout;
+    stream.write(process.env.VULN_STUB_SNYK_CODE_RAW ?? fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
     // Snyk exits 1 when it finds issues. Set exitCode rather than calling
-    // process.exit() so the piped stdout is fully flushed first.
-    process.exitCode = 1;
+    // process.exit() so the piped output is fully flushed first.
+    process.exitCode = Number(process.env.VULN_STUB_SNYK_CODE_EXIT ?? 1);
 } else if (args[0] === 'test') {
     switch (process.env.VULN_STUB_MODE || '') {
         case 'auth':

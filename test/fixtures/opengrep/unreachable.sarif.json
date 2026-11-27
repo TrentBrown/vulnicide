@@ -1,0 +1,32 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "descriptor": {
+                "id": "SemgrepError"
+              },
+              "level": "error",
+              "message": {
+                "text": "Failed to download config from https://registry.invalid/c/p/default: Failure: TLS to non-TCP currently unsupported: host=registry.invalid endp=(Unknown \"name resolution failed\")"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [],
+      "tool": {
+        "driver": {
+          "name": "Opengrep",
+          "rules": [],
+          "semanticVersion": "2.1.0"
+        }
+      }
+    }
+  ],
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json"
+}

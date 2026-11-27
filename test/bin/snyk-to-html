@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 // Offline stand-in for snyk-to-html, used only by the smoke test.
+// VULN_STUB_SNYK_TO_HTML_FAIL=1 makes it fail, as a broken install would.
 import fs from 'fs';
 
 const args = process.argv.slice(2);
+if (process.env.VULN_STUB_LOG) {
+    fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({ tool: 'snyk-to-html', cwd: process.cwd(), args })}\n`);
+}
+if (process.env.VULN_STUB_SNYK_TO_HTML_FAIL) {
+    console.error('snyk-to-html stub: simulated failure');
+    process.exit(1);
+}
 const input = args[args.indexOf('--input') + 1];
 const output = args[args.indexOf('--output') + 1];
 const data = JSON.parse(fs.readFileSync(input, 'utf-8'));

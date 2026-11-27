@@ -23,6 +23,11 @@ let pythonTarget;
 let stubLog;
 
 function vuln(...args) {
+    return vulnExpect(0, ...args);
+}
+
+// `code build`/`rebuild` exit 1 when the scan finds issues (2.0.0 outcome codes).
+function vulnExpect(expectedStatus, ...args) {
     const result = spawnSync(process.execPath, [cli, ...args], {
         encoding: 'utf-8',
         env: {
@@ -35,7 +40,7 @@ function vuln(...args) {
         }
     });
     const output = `${result.stdout}${result.stderr}`;
-    assert.equal(result.status, 0, `vulnicide ${args.join(' ')} exited ${result.status}:\n${output}`);
+    assert.equal(result.status, expectedStatus, `vulnicide ${args.join(' ')} exited ${result.status}:\n${output}`);
     return output;
 }
 
@@ -76,7 +81,7 @@ test('help -r lists every command group', () => {
 
 test('help shows the immediate subcommands, -r the whole tree, -r <depth> a limited one', () => {
     const shallow = vuln('help');
-    assert.match(shallow, /^vulnicide Snyk-driven/m);
+    assert.match(shallow, /^vulnicide Vulnerability scanning/m);
     assert.match(shallow, /^ {4}deps Manage dependency vulnerability scanning$/m);
     assert.doesNotMatch(shallow, /^ {8}gate /m, 'help without -r does not descend into deps');
     assert.match(shallow, /Legend:/);
@@ -170,8 +175,8 @@ test('deps explain builds prioritized dependency packets', () => {
     assert.match(fs.readFileSync(path.join(dir, 'remediation-packets.md'), 'utf-8'), /# Dependency Remediation Packets/);
 });
 
-test('code build and explain work for a Node target', () => {
-    vuln('code', 'build', '--target', nodeTarget);
+test('code build and explain work for a Node target with Snyk Code', () => {
+    vulnExpect(1, 'code', 'build', '--engine', 'snyk', '--target', nodeTarget);
     const dir = path.join(nodeTarget, 'build', 'code');
     assert.ok(fs.existsSync(path.join(dir, 'audit-code.html')));
 
@@ -191,8 +196,8 @@ test('code build and explain work for a Node target', () => {
     assert.equal(report.packets[0].rule.level, 'error');
 });
 
-test('code build and explain work for a non-Node target', () => {
-    const output = vuln('code', 'build', '--target', pythonTarget);
+test('code build and explain work for a non-Node target with Snyk Code', () => {
+    const output = vulnExpect(1, 'code', 'build', '--engine', 'snyk', '--target', pythonTarget);
     assert.doesNotMatch(output, /No Node\.js project/);
     vuln('code', 'explain', '--target', pythonTarget);
     const report = readJson(pythonTarget, 'build', 'code', 'remediation-packets.json');
@@ -317,7 +322,7 @@ test('clean refuses a build directory that is a symlink out of the target', () =
 test('a build directory whose name merely starts with ".." stays allowed', () => {
     fs.writeFileSync(path.join(nodeTarget, '.vulnrc.json'), JSON.stringify({ buildDir: '..build' }));
     try {
-        vuln('code', 'build', '--target', nodeTarget);
+        vulnExpect(1, 'code', 'build', '--target', nodeTarget);
         assert.ok(fs.existsSync(path.join(nodeTarget, '..build', 'code', 'audit-code.json')));
         vuln('code', 'clean', '--target', nodeTarget);
         assert.ok(!fs.existsSync(path.join(nodeTarget, '..build', 'code')));
@@ -329,7 +334,7 @@ test('a build directory whose name merely starts with ".." stays allowed', () =>
 
 test('rebuild, browse and policy open run without launching anything', () => {
     assert.match(vuln('deps', 'rebuild', '--target', nodeTarget), /Cleaned dependencies audit report[\s\S]*\.\.\.done/);
-    assert.match(vuln('code', 'rebuild', '--target', nodeTarget), /Cleaned code audit report[\s\S]*\.\.\.done/);
+    assert.match(vulnExpect(1, 'code', 'rebuild', '--target', nodeTarget), /Cleaned code audit report[\s\S]*\.\.\.done/);
     assert.match(vuln('summary', 'rebuild', '--target', nodeTarget), /Cleaned summary report[\s\S]*Built summary report/);
 
     const reports = {
