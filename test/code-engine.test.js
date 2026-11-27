@@ -409,6 +409,25 @@ for (const command of COMMANDS) {
         });
     }
 
+    test(`R2/R4 ${command}: a .snyk symlink whose target is missing is an error, not "no exclusions"`, () => {
+        const dir = target();
+        fs.symlinkSync(path.join(work, `missing-shared-policy-${++counter}.snyk`), path.join(dir, '.snyk'));
+        const result = code(command, dir);
+        assert.equal(result.status, 3, result.output);
+        assert.equal(result.calls.filter((call) => call.tool === 'opengrep').length, 0, 'no scan without the policy');
+        const outcome = readOutcome(dir);
+        assert.equal(outcome.outcome, 'error');
+        assert.match(outcome.message, /\.snyk/);
+    });
+
+    test(`R2 ${command}: a target without any .snyk scans with no exclusions`, () => {
+        const dir = target();
+        fs.rmSync(path.join(dir, '.snyk'), { force: true });
+        const result = code(command, dir);
+        assert.equal(result.status, 1, result.output);
+        assert.ok(!scanCalls(result.calls, 'opengrep')[0].args.includes('--exclude'));
+    });
+
     test(`R5 ${command}: packets from an earlier run are removed with its audit`, () => {
         const dir = target();
         assert.equal(code('build', dir).status, 1);

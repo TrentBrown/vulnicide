@@ -135,7 +135,15 @@ export function countedResults(sarif, engine, severityThreshold) {
 // must never silently scan files the project meant to exclude.
 // Returns { excludes } or { error }.
 export async function readCodeExcludes(policyPath) {
-    if (!await fileExists(policyPath)) return { excludes: [] };
+    // Only a .snyk that doesn't exist at all means "no exclusions". An entry
+    // that exists but can't be read (for example a symlink to a shared
+    // policy whose target is missing) is an error.
+    try {
+        await fs.lstat(policyPath);
+    } catch (error) {
+        if (error.code === 'ENOENT') return { excludes: [] };
+        return { error: `The .snyk policy could not be read, so its code exclusions can't be applied: ${error.message}` };
+    }
     let policy;
     try {
         policy = loadYaml(await fs.readFile(policyPath, 'utf-8')) ?? {};
