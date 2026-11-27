@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import chalk from 'chalk';
+import { runProcess, stderrSummary } from './process.js';
 
 export async function runSnykTest(options = {}) {
     const args = ['test', '--json'];
@@ -23,22 +24,77 @@ export async function runSnykTest(options = {}) {
     return runSnykCommand(args, options);
 }
 
-export async function runSnykCodeTest(options = {}) {
+export function buildSnykCodeArgs(options = {}) {
     const args = ['code', 'test', '--json'];
+    if (options.severityThreshold) args.push(`--severity-threshold=${options.severityThreshold}`);
+    if (options.policyPath) args.push(`--policy-path=${options.policyPath}`);
+    if (options.debug) args.push('--debug');
+    return args;
+}
 
-    if (options.severityThreshold) {
-        args.push(`--severity-threshold=${options.severityThreshold}`);
+// Run Snyk Code and return a normalized scan result:
+// { engine, engineVersion, status: completed|unavailable|error, reason, message, sarif }
+// Unlike the dependency runner, the exit code and Snyk's error JSON are
+// checked, so an error is never mistaken for an audit.
+export async function runSnykCodeScan(options = {}) {
+    const result = await runProcess('snyk', buildSnykCodeArgs(options), {
+        cwd: options.cwd || process.cwd(),
+        env: { ...process.env, FORCE_COLOR: '1' }
+    });
+    if (result.notFound) {
+        return {
+            engine: 'snyk',
+            engineVersion: null,
+            status: 'unavailable',
+            reason: 'not-installed',
+            message: 'Snyk is not installed (no `snyk` on PATH). Install it with: npm install -g snyk',
+            sarif: null
+        };
+    }
+    return classifySnykCodeRun(result);
+}
+
+export function classifySnykCodeRun({ code, stdout, stderr }) {
+    const parse = (text) => {
+        try {
+            return JSON.parse(text);
+        } catch {
+            return null;
+        }
+    };
+    const out = parse(stdout);
+    const err = parse(stderr);
+
+    if ((code === 0 || code === 1) && Array.isArray(out?.runs)) {
+        const driver = out.runs[0]?.tool?.driver || {};
+        return {
+            engine: 'snyk',
+            engineVersion: driver.semanticVersion || driver.version || null,
+            status: 'completed',
+            reason: null,
+            message: 'Snyk Code scan completed.',
+            sarif: out
+        };
     }
 
-    if (options.policyPath) {
-        args.push(`--policy-path=${options.policyPath}`);
+    // Snyk prints `{ ok: false, error, ... }`, on stderr in current releases
+    // (stdout in some older ones).
+    const errorObject = [out, err].find((value) => value && value.ok === false && value.error);
+    const detail = errorObject
+        ? String(errorObject.error)
+        : (stderrSummary(stderr) || String(stdout).trim().slice(0, 300) || `exit ${code}`);
+    const reason = classifySnykError(detail, errorObject);
+    if (reason) {
+        return { engine: 'snyk', engineVersion: null, status: 'unavailable', reason, message: `Snyk Code is unavailable: ${detail}`, sarif: null };
     }
+    return { engine: 'snyk', engineVersion: null, status: 'error', reason: null, message: `Snyk Code failed (exit ${code}): ${detail}`, sarif: null };
+}
 
-    if (options.debug) {
-        args.push('--debug');
-    }
-
-    return runSnykCommand(args, options);
+function classifySnykError(detail, errorObject) {
+    const text = `${detail} ${errorObject?.code ?? ''}`;
+    if (/snyk auth|authenticat|unauthori[sz]ed|SNYK-0005|\b401\b/i.test(text)) return 'not-authenticated';
+    if (/not enabled|not supported for (?:this )?org|enable .*Snyk Code|limit|quota|\b403\b|\b429\b/i.test(text)) return 'not-entitled';
+    return null;
 }
 
 export async function generateHtmlReport(jsonPath, htmlPath, options = {}) {

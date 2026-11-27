@@ -18,7 +18,7 @@ async function main() {
 
     program
         .name('vulnicide')
-        .description('Snyk-driven vulnerability scanning and remediation packets')
+        .description('Vulnerability scanning (local Opengrep code analysis, Snyk dependencies) and remediation packets')
         .version(pkg.version);
     addTargetOption(program);
 
@@ -39,13 +39,14 @@ async function main() {
         console.log('  vulnicide policy init --target ../app          Initialize .snyk policy file');
         console.log('  vulnicide deps build --target ../app           Scan dependencies for vulnerabilities');
         console.log('  vulnicide deps explain --target ../app         Build dependency remediation packets');
-        console.log('  vulnicide code build --target ../app           Scan code for security issues');
+        console.log('  vulnicide code build --target ../app           Scan code locally with Opengrep (--engine snyk for Snyk Code)');
         console.log('  vulnicide code explain --target ../app         Build code remediation packets');
         console.log('  vulnicide audit open --target ../app           Create/open the remediation audit log');
         console.log('  vulnicide summary build --target ../app        Generate summary report');
         console.log('  vulnicide help -r                              Show all commands in tree format');
         console.log('');
         console.log('Prerequisites:');
+        console.log('  • Opengrep 2.1.0+ (code scans): see docs/prerequisites.md');
         console.log('  • Snyk CLI: npm install -g snyk');
         console.log('  • Snyk-to-HTML: npm install -g snyk-to-html');
     });

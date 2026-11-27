@@ -29,6 +29,35 @@ export function getProjectId(config, context = {}) {
     return id.replace(/[^A-Za-z0-9._-]/g, '-');
 }
 
+export const CODE_ENGINES = ['opengrep', 'snyk'];
+export const DEFAULT_CODE_ENGINE = 'opengrep';
+export const DEFAULT_OPENGREP_CONFIG = ['p/default'];
+
+export class UsageError extends Error {}
+
+// Engine precedence: --engine flag, then project config `codeEngine`, then
+// the built-in default. An unknown name is a usage error.
+export function getCodeEngine(config, flagValue) {
+    const fromFlag = flagValue !== undefined && flagValue !== null;
+    const engine = fromFlag ? flagValue : (config.codeEngine ?? DEFAULT_CODE_ENGINE);
+    if (!CODE_ENGINES.includes(engine)) {
+        const source = fromFlag ? '--engine' : 'codeEngine in the project config';
+        throw new UsageError(`Unknown code engine "${engine}" (from ${source}). Use one of: ${CODE_ENGINES.join(', ')}.`);
+    }
+    return engine;
+}
+
+// Opengrep rule sources: registry packs (p/<name>) and/or local rule files
+// or folders. A project list replaces the default entirely.
+export function getOpengrepConfig(config) {
+    const list = config.opengrepConfig;
+    if (list === undefined || list === null) return [...DEFAULT_OPENGREP_CONFIG];
+    if (!Array.isArray(list) || list.length === 0 || !list.every((entry) => typeof entry === 'string' && entry.trim())) {
+        throw new UsageError('opengrepConfig in the project config must be a non-empty list of rule sources, e.g. ["p/default", "./security-rules/"].');
+    }
+    return list;
+}
+
 export function getBuildDirPath(config) {
     return config.buildDir || 'build';
 }

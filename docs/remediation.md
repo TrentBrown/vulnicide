@@ -6,11 +6,20 @@ This guide explains how to use the `.snyk` policy file to manage and remediate v
 
 ## Overview
 
-Snyk scans for two types of vulnerabilities:
-- **Code vulnerabilities** (static analysis of your application code)
-- **Dependency vulnerabilities** (in libraries your application depends on)
+vulnicide scans for two types of vulnerabilities:
+- **Code vulnerabilities** (static analysis of your application code). By
+  default Opengrep does this locally. Snyk Code does it with
+  `--engine snyk`, which uploads the source to Snyk.
+- **Dependency vulnerabilities** (in libraries your application depends on),
+  checked by the Snyk CLI.
 
-Both scans use the same Snyk CLI tool, but with different command-line options.
+Code analysis doesn't look up CVEs. Your own code has none; CVEs identify
+flaws in published components. Code analysis looks for kinds of weakness,
+labelled by CWE (for example CWE-78, OS command injection), whichever engine
+runs it. Dependency scans are the ones that match known vulnerabilities (CVEs)
+in published packages.
+
+The `.snyk` policy file governs both code engines and the dependency scan.
 Dependency ignores belong in the `.snyk` beside the relevant manifest. Snyk Code
 file exclusions must be discoverable from its scan root; a nested application
 policy must not be assumed to govern a repository-root GitHub Code project.
@@ -42,6 +51,29 @@ While the overall remediation process is similar for both code and dependency sc
 ---
 
 ## Excluding Files and Directories
+
+`.snyk` is the single exclusion record for code scans with either engine.
+When the engine is Opengrep, vulnicide passes every `exclude.global` and
+`exclude.code` pattern to Opengrep unchanged, as `--exclude`. Opengrep matches
+them gitignore-style:
+
+- a pattern with a slash anywhere except at the end is anchored at the project
+  root: `test/**` excludes the top-level `test/` folder only;
+- a pattern without a slash, or one that starts with `**/`, matches at any
+  depth: `**/vendor/**` and `vendor` both exclude every `vendor/` folder;
+- `*.min.js` matches the file name anywhere.
+
+Write patterns so they mean the same under both engines, and re-scan after
+changing them to confirm that the excluded files are gone and the others are
+still scanned. Under Opengrep, vulnicide also turns off three other ways of
+hiding code:
+
+- inline `nosemgrep` comments (`--disable-nosem`);
+- `.semgrepignore` files;
+- Opengrep's built-in ignore list, which would otherwise skip folders such as
+  `tests/` and `vendor/`.
+
+Opengrep still skips minified files on its own.
 
 - Use `exclude.global` only for products supporting file exclusions (e.g.,
   excluding `dist/` from Snyk Code); it does not exclude dependency projects.
@@ -143,19 +175,19 @@ verify the rationale and the project-specific exploitability before committing.
    ```
 2. **Remediate or accept risk:**
    - If you fix the vulnerability and it no longer appears, you're done.
-   - If you cannot remediate, or Snyk does not recognize your fix, continue below.
+   - If you cannot remediate, or the scanner does not recognize your fix, continue below.
 3. **Mitigate in code:**
    - Move or factor out the offending code into a `mitigated.js` file in the same directory as the original file. If `mitigated.js` exists, add to it.
 4. **Exclude mitigated file:**
    - Add `mitigated.js` to the `exclude.code` section of `.snyk` if not already present.
 5. **Document your decision:**
-   - In the `.snyk` file, add a comment block explaining the vulnerability, your mitigation, and the reason for accepting the risk or why Snyk's detection is incorrect.
+   - In the `.snyk` file, add a comment block explaining the vulnerability, your mitigation, and the reason for accepting the risk or why the scanner's detection is incorrect.
 6. **Re-scan:**
    - Run the scan again to ensure the vulnerability is excluded from the report.
 
 #### Model-assisted code triage
 
-Code scan JSON is SARIF. It is more structured than the dependency audit JSON,
+Code scan JSON is SARIF, from either engine. It is more structured than the dependency audit JSON,
 but still includes repeated rule documentation, fingerprints, and code-flow
 metadata. Generate remediation packets before asking a model to evaluate code
 findings:
@@ -174,6 +206,7 @@ vulnicide code explain --target ../my-app
 The command reads:
 
 - `build/code/audit-code.json`
+- `build/code/scan-result.json` (which engine ran)
 - `package.json`
 - `.snyk`
 
@@ -185,7 +218,13 @@ It writes:
 Each packet records:
 
 - the packet ID, such as `C-001-javascript-xss-handlers-users-js-42`
-- Snyk Code rule ID, title, level, priority score, and autofix flag
+- the engine (`source.engine`: `opengrep` or `snyk`)
+- the rule ID, title and level, and the rule's CWE IDs, OWASP categories and
+  confidence where the rule provides them
+- Snyk's priority score and autofix flag (null and false for Opengrep)
+- a classification, taken from the CWE where possible (`secret-remediation`,
+  `output-sanitization`, `input-validation`). Test files are classified
+  `test-code-triage` first, and Snyk rule-name patterns are the fallback
 - primary file, line, and column
 - the finding message and compact code-flow locations
 - a short model prompt for the packet

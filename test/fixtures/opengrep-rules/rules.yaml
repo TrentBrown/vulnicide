@@ -1,0 +1,63 @@
+# Local Opengrep rules used only to capture deterministic, offline test
+# fixtures (see test/fixtures/opengrep/README.md). They target the
+# deliberately vulnerable sample code under test/fixtures.
+rules:
+  - id: fixture.js.command-injection-taint
+    mode: taint
+    languages: [javascript]
+    severity: ERROR
+    message: Request data reaches a shell command through exec().
+    pattern-sources:
+      - pattern: $REQ.url
+    pattern-sinks:
+      - patterns:
+          - pattern: exec($CMD, ...)
+          - focus-metavariable: $CMD
+    metadata:
+      cwe:
+        - "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+      owasp:
+        - "A03:2021 - Injection"
+      confidence: HIGH
+      category: security
+
+  - id: fixture.js.reflected-html
+    languages: [javascript]
+    severity: WARNING
+    message: Request data is written into an HTML response without escaping.
+    pattern: $RES.end($A + $B)
+    metadata:
+      cwe:
+        - "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+      owasp:
+        - "A03:2021 - Injection"
+      confidence: MEDIUM
+      category: security
+
+  - id: fixture.js.hardcoded-password
+    languages: [javascript]
+    severity: INFO
+    message: A password is hard-coded in source.
+    patterns:
+      - pattern: const $NAME = "...";
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i).*password.*
+    metadata:
+      cwe:
+        - "CWE-798: Use of Hard-coded Credentials"
+      confidence: LOW
+      category: security
+
+  - id: fixture.py.shell-true
+    languages: [python]
+    severity: ERROR
+    message: subprocess is called with shell=True on a concatenated command.
+    pattern: subprocess.check_output($CMD + $X, shell=True)
+    metadata:
+      cwe:
+        - "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+      owasp:
+        - "A03:2021 - Injection"
+      confidence: HIGH
+      category: security

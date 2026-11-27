@@ -1,0 +1,156 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "fingerprints": {
+            "matchBasedId/v1": "c36a265f73332021ecf2b8d39fd2bac95743c314db419b6ec445b23f009e57da57e04066cdb266ed4760a3fa985a2f06659a4d880cf2a67ab191a6147bc71a02_0"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app.py",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 68,
+                  "endLine": 11,
+                  "snippet": {
+                    "text": "    return subprocess.check_output(\"ping -c 1 \" + host, shell=True)"
+                  },
+                  "startColumn": 12,
+                  "startLine": 11
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "subprocess is called with shell=True on a concatenated command."
+          },
+          "properties": {},
+          "ruleId": "test.fixtures.opengrep-rules.fixture.py.shell-true"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Opengrep",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Request data reaches a shell command through exec()."
+              },
+              "help": {
+                "markdown": "Request data reaches a shell command through exec().",
+                "text": "Request data reaches a shell command through exec()."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.js.command-injection-taint",
+              "name": "test.fixtures.opengrep-rules.fixture.js.command-injection-taint",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+                  "HIGH CONFIDENCE",
+                  "OWASP-A03:2021 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.js.command-injection-taint"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "fullDescription": {
+                "text": "A password is hard-coded in source."
+              },
+              "help": {
+                "markdown": "A password is hard-coded in source.",
+                "text": "A password is hard-coded in source."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.js.hardcoded-password",
+              "name": "test.fixtures.opengrep-rules.fixture.js.hardcoded-password",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-798: Use of Hard-coded Credentials",
+                  "LOW CONFIDENCE",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.js.hardcoded-password"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Request data is written into an HTML response without escaping."
+              },
+              "help": {
+                "markdown": "Request data is written into an HTML response without escaping.",
+                "text": "Request data is written into an HTML response without escaping."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.js.reflected-html",
+              "name": "test.fixtures.opengrep-rules.fixture.js.reflected-html",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+                  "MEDIUM CONFIDENCE",
+                  "OWASP-A03:2021 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.js.reflected-html"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "subprocess is called with shell=True on a concatenated command."
+              },
+              "help": {
+                "markdown": "subprocess is called with shell=True on a concatenated command.",
+                "text": "subprocess is called with shell=True on a concatenated command."
+              },
+              "id": "test.fixtures.opengrep-rules.fixture.py.shell-true",
+              "name": "test.fixtures.opengrep-rules.fixture.py.shell-true",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+                  "HIGH CONFIDENCE",
+                  "OWASP-A03:2021 - Injection",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Opengrep Finding: test.fixtures.opengrep-rules.fixture.py.shell-true"
+              }
+            }
+          ],
+          "semanticVersion": "2.1.0"
+        }
+      }
+    }
+  ],
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json"
+}

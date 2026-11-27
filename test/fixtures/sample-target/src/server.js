@@ -11,3 +11,6 @@ http.createServer((req, res) => {
         res.end('<p>Hello ' + name + '</p><pre>' + stdout + '</pre>');
     });
 }).listen(8080);
+
+// Deliberately hard-coded credential for the CWE-798 fixture rule. Not a real secret.
+const DB_PASSWORD = 'not-a-real-password';

@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 // Offline stand-in for Snyk's CLI, used only by the smoke test.
 // It replays captured JSON so `npm test` spends no Snyk test quota.
+//
+// Environment controls for `snyk code test` (all optional):
+//   VULN_STUB_LOG              append {tool, cwd, args} per call (JSON lines)
+//   VULN_STUB_SNYK_CODE_FIXTURE  file in test/fixtures/snyk to replay
+//   VULN_STUB_SNYK_CODE_EXIT     exit code (default 1, as when issues are found)
+//   VULN_STUB_SNYK_CODE_STREAM   "stdout" (default) or "stderr"; real Snyk
+//                                prints its error JSON on stderr
+//   VULN_STUB_SNYK_CODE_RAW      print this text instead of a fixture
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -9,12 +17,17 @@ const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const args = process.argv.slice(2);
 
 if (process.env.VULN_STUB_LOG) {
-    fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({ cwd: process.cwd(), args })}\n`);
+    fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({ tool: 'snyk', cwd: process.cwd(), args })}\n`);
 }
 
 let fixture;
+let exitCode = 1;
+let stream = process.stdout;
 if (args[0] === 'code' && args[1] === 'test') {
-    fixture = fs.existsSync('package.json') ? 'code-node.sarif.json' : 'code-python.sarif.json';
+    fixture = process.env.VULN_STUB_SNYK_CODE_FIXTURE
+        || (fs.existsSync('package.json') ? 'code-node.sarif.json' : 'code-python.sarif.json');
+    exitCode = Number(process.env.VULN_STUB_SNYK_CODE_EXIT ?? 1);
+    if (process.env.VULN_STUB_SNYK_CODE_STREAM === 'stderr') stream = process.stderr;
 } else if (args[0] === 'test') {
     fixture = 'deps-node.json';
 } else {
@@ -22,7 +35,11 @@ if (args[0] === 'code' && args[1] === 'test') {
     process.exit(2);
 }
 
-process.stdout.write(fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
+if (args[0] === 'code' && process.env.VULN_STUB_SNYK_CODE_RAW !== undefined) {
+    stream.write(process.env.VULN_STUB_SNYK_CODE_RAW);
+} else {
+    stream.write(fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
+}
 // Snyk exits 1 when it finds issues. Set exitCode rather than calling
-// process.exit() so the piped stdout is fully flushed first.
-process.exitCode = 1;
+// process.exit() so the piped output is fully flushed first.
+process.exitCode = exitCode;

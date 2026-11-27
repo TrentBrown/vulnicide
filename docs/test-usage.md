@@ -11,7 +11,7 @@ numbers.
 | Question | Answer |
 | --- | --- |
 | Does `snyk test --all-projects` count as one test? | **No.** Each manifest in scope counts as its own Open Source test, so a repo with 20 manifests uses about 20 tests per run. |
-| How is Snyk Code counted? | Per repository scanned, so one `snyk code test` of a repo is about 1 Code test. |
+| How is Snyk Code counted? | Per repository scanned, so one `snyk code test` of a repo is about 1 Code test. vulnicide's default code engine, Opengrep, runs locally and uses no Snyk tests. |
 | Free plan limits | Code is 100 tests. Open Source is **400** on the docs' usage-settings page but **200** on the pricing page. Plan for 200 until your Usage page shows otherwise. |
 | Are public repos exempt? | **Yes.** The limits apply to private repositories only. |
 | What makes a CLI-scanned project public? | The documented route is `snyk monitor`, then set the project's **Git remote URL** to the public repo in the Snyk Web UI. No CLI flag is documented as marking a test public. |
@@ -38,8 +38,9 @@ per directory you build.
 ## 2. Snyk Code: one test per repository scanned
 
 The same page defines Code usage as "the number of repositories scanned by the
-customer". One `vulnicide code build` (`snyk code test`) of a repository counts as
-one Code test however many files it contains.
+customer". One `vulnicide code build --engine snyk` (`snyk code test`) of a
+repository counts as one Code test however many files it contains. A plain
+`vulnicide code build` uses Opengrep locally and counts against nothing.
 
 ## 3. Free plan limits
 

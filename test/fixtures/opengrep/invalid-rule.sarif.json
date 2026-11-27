@@ -1,0 +1,32 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "descriptor": {
+                "id": "Rule parse error"
+              },
+              "level": "error",
+              "message": {
+                "text": "Rule parse error in rule tmp.broken:\n Invalid pattern for JavaScript: Parsing_error.Lexical_error (look_close_paren, _NOT_A_FILE_:1:4 \"(\")\n----- pattern -----\nexec(\n----- end pattern -----\n"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [],
+      "tool": {
+        "driver": {
+          "name": "Opengrep",
+          "rules": [],
+          "semanticVersion": "2.1.0"
+        }
+      }
+    }
+  ],
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json"
+}
