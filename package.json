@@ -1,6 +1,6 @@
 {
   "name": "@trentbrown/vulnicide",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "Snyk-driven vulnerability scanning and model-friendly remediation packets",
   "type": "module",
@@ -29,7 +29,6 @@
     "test:install": "bash test/install-check.sh"
   },
   "dependencies": {
-    "qp-cli-core": "^1.7.1",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "js-yaml": "^5.2.3",
