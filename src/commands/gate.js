@@ -95,9 +95,12 @@ export function parseGateRequest(text) {
 
     if (request.schemaVersion === GATE_SCHEMA_VERSION) {
         if (typeof request.includeDev !== 'boolean') throw new GateRequestError('"includeDev" must be a boolean');
+        // A missing field is neither a string nor null, so it is malformed too:
+        // scanning without a policy the caller meant to send would answer the
+        // wrong question.
         for (const field of ['policyPath', 'annotatePolicyPath', 'remoteRepoUrl']) {
             const value = request[field];
-            if (value !== undefined && value !== null && typeof value !== 'string') {
+            if (value !== null && typeof value !== 'string') {
                 throw new GateRequestError(`"${field}" must be a string or null`);
             }
         }
@@ -130,15 +133,13 @@ export async function runGate(request, { timeoutMs = DEFAULT_GATE_TIMEOUT_SECOND
     response.scanner.version = parseScannerVersion(probe.stdout);
 
     // Design choice 3: the scan can't run under a policy that isn't there.
-    const policyPath = request.policyPath ?? null;
-    const annotatePolicyPath = request.annotatePolicyPath ?? null;
+    const { policyPath, annotatePolicyPath, remoteRepoUrl } = request;
     for (const [field, value] of [['policyPath', policyPath], ['annotatePolicyPath', annotatePolicyPath]]) {
         if (value !== null && !isAbsoluteFile(value)) {
             return unavailableAll('scanner-error', `${field} is not an absolute path to an existing file`);
         }
     }
-    const branchPolicy = annotatePolicyPath ? readPolicy(annotatePolicyPath) : null;
-    const remoteRepoUrl = request.remoteRepoUrl ?? null;
+    const branchPolicy = annotatePolicyPath !== null ? readPolicy(annotatePolicyPath) : null;
 
     for (const target of request.targets) {
         response.targets.push(await scanTarget(target, {
@@ -198,8 +199,8 @@ export function buildSnykArgs(lockfile, { includeDev, policyPath, remoteRepoUrl 
     const args = ['test', '--json'];
     if (includeDev) args.push('--dev');
     args.push(`--file=${lockfile}`);
-    if (policyPath) args.push(`--policy-path=${policyPath}`);
-    if (remoteRepoUrl) args.push(`--remote-repo-url=${remoteRepoUrl}`);
+    if (policyPath !== null && policyPath !== undefined) args.push(`--policy-path=${policyPath}`);
+    if (remoteRepoUrl !== null && remoteRepoUrl !== undefined) args.push(`--remote-repo-url=${remoteRepoUrl}`);
     return args;
 }
 
@@ -241,6 +242,9 @@ export function interpretSnykResult(key, result, { includeDev, packageJson, bran
 // Design choice 5. Snyk's messages are matched here and then discarded; they
 // never reach the response.
 export function classifySnykFailure(exitCode, parsed, stderr) {
+    // Exit 3 is Snyk's own "no supported project" signal. It wins over text
+    // matching, because the message can contain host paths with any word in them.
+    if (exitCode === 3) return { reason: 'unsupported', description: 'snyk found no supported project to test' };
     const text = [...errorMessages(parsed), stderr || ''].join('\n');
     if (/test limit|limit of \d+|reached (your|the) (monthly |usage )?limit|usage limit|quota/i.test(text)) {
         return { reason: 'quota-exceeded', description: 'snyk reported that the test limit was reached' };
@@ -251,7 +255,7 @@ export function classifySnykFailure(exitCode, parsed, stderr) {
     if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|socket hang up|getaddrinfo|network|connection (error|refused|reset|timed out)|(could not|unable to|failed to) connect|proxy/i.test(text)) {
         return { reason: 'network', description: 'snyk reported a network error' };
     }
-    if (exitCode === 3 || /could not detect supported target|no supported (target|project|files?)|unsupported|not supported/i.test(text)) {
+    if (/could not detect supported target|no supported (target|project|files?)|unsupported|not supported/i.test(text)) {
         return { reason: 'unsupported', description: 'snyk found no supported project to test' };
     }
     return { reason: 'scanner-error', description: 'snyk test failed' };
@@ -378,7 +382,9 @@ export function findBranchIgnore(policy, vulnId, paths, now = new Date()) {
         for (const [rulePath, settings] of Object.entries(rule)) {
             const details = isPlainObject(settings) ? settings : {};
             const expires = normalizeExpires(details.expires);
-            if (expires.time !== null && expires.time <= now.getTime()) continue;
+            // An expiry that isn't a valid date can't be shown to be in the
+            // future, so the rule doesn't annotate.
+            if (expires.invalid || (expires.time !== null && expires.time <= now.getTime())) continue;
             if (paths.some((from) => policyPathMatches(rulePath, from.slice(1)))) {
                 return {
                     reason: typeof details.reason === 'string' ? details.reason : null,
@@ -392,10 +398,10 @@ export function findBranchIgnore(policy, vulnId, paths, now = new Date()) {
 }
 
 function normalizeExpires(expires) {
-    if (expires === undefined || expires === null || expires === '') return { value: null, time: null };
+    if (expires === undefined || expires === null) return { value: null, time: null, invalid: false };
     const date = expires instanceof Date ? expires : new Date(String(expires));
-    if (Number.isNaN(date.getTime())) return { value: String(expires), time: null };
-    return { value: date.toISOString(), time: date.getTime() };
+    if (String(expires).trim() === '' || Number.isNaN(date.getTime())) return { value: null, time: null, invalid: true };
+    return { value: date.toISOString(), time: date.getTime(), invalid: false };
 }
 
 // A rule path is `*` or ` > `-separated segments, each `*`, a name or

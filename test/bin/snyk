@@ -8,7 +8,8 @@
 //                           fixtures/snyk/deps-node.json
 //   VULN_STUB_TEST_EXIT     exit code for `snyk test` replays (default 1)
 //   VULN_STUB_MODE          make `snyk test` fail the way Snyk does:
-//                           auth | quota | network | no-project | garbage |
+//                           auth | quota | network | no-project |
+//                           no-project-noisy | garbage |
 //                           error | sleep | leak
 //   VULN_STUB_NO_VERSION=1  make `snyk --version` fail
 import fs from 'fs';
@@ -62,6 +63,10 @@ if (args[0] === '--version') {
             break;
         case 'no-project':
             errorJson(`Could not detect supported target files in ${process.cwd()}`);
+            process.exitCode = 3;
+            break;
+        case 'no-project-noisy':
+            errorJson('Could not detect supported target files in /scratch/network-proxy-quota-authentication');
             process.exitCode = 3;
             break;
         case 'garbage':

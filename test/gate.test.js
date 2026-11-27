@@ -150,6 +150,10 @@ before(() => {
         '  SNYK-JS-MINIMIST-2429795:',
         "    - 'minimist@1.2.0':",
         '        reason: Only used by a build script',
+        '  SNYK-JS-LODASH-15053838:',
+        "    - '*':",
+        '        reason: Unparseable expiry',
+        '        expires: not-a-date',
         'patch: {}',
         ''
     ].join('\n'));
@@ -180,9 +184,23 @@ test('R1: runs snyk test once per target, in order, with exactly the requested a
         assert.ok(!call.args.some((arg) => arg.includes('head.snyk')), 'the head policy is never passed to snyk');
     }
 
-    const minimal = testCalls(ok(request([{ key: 'k', dir: base, lockfile: 'package-lock.json' }], { includeDev: false })).calls);
-    assert.deepEqual(minimal[0].args, ['test', '--json', '--file=package-lock.json']);
-    for (const call of [...tests, ...minimal]) {
+    // Every combination of the three optional flags, independently.
+    const combos = [];
+    for (const includeDev of [false, true]) {
+        for (const policyPath of [null, basePolicy]) {
+            for (const remoteRepoUrl of [null, 'https://github.com/example/public-repo', '']) {
+                const [call] = testCalls(ok(request([{ key: 'k', dir: base, lockfile: 'package-lock.json' }], { includeDev, policyPath, remoteRepoUrl })).calls);
+                const expected = ['test', '--json'];
+                if (includeDev) expected.push('--dev');
+                expected.push('--file=package-lock.json');
+                if (policyPath !== null) expected.push(`--policy-path=${policyPath}`);
+                if (remoteRepoUrl !== null) expected.push(`--remote-repo-url=${remoteRepoUrl}`);
+                assert.deepEqual(call.args, expected, JSON.stringify({ includeDev, policyPath, remoteRepoUrl }));
+                combos.push(call);
+            }
+        }
+    }
+    for (const call of [...tests, ...combos]) {
         for (const forbidden of ['--debug', '--all-projects', '--severity-threshold']) {
             assert.ok(!call.args.some((arg) => arg.startsWith(forbidden)), `${forbidden} is never passed`);
         }
@@ -311,6 +329,7 @@ test('R4: branchIgnore comes from the head policy only, for unexpired matching i
     assert.equal(byId['SNYK-JS-MINIMIST-559764'], null, 'a non-matching path does not annotate');
     assert.deepEqual(byId['SNYK-JS-MINIMIST-2429795'], { reason: 'Only used by a build script', expires: null, path: 'minimist@1.2.0' });
     assert.equal(byId['SNYK-JS-LODASH-1018905'], null, 'no ignore gives null');
+    assert.equal(byId['SNYK-JS-LODASH-15053838'], null, 'an ignore with an invalid expiry does not annotate');
     assert.ok(testCalls(calls).every((call) => !call.args.join(' ').includes('head.snyk')));
 
     const broken = path.join(policies, 'broken.snyk');
@@ -339,6 +358,9 @@ test('R5: Snyk unavailability is reported per target as data, exiting 0', () => 
         assert.deepEqual(target.findings, [], mode);
         if (detailPattern) assert.match(target.unavailable.detail, detailPattern, mode);
     }
+
+    const exit3Text = ok(request(one), { env: { VULN_STUB_MODE: 'no-project-noisy' } }).response.targets[0];
+    assert.equal(exit3Text.unavailable.reason, 'unsupported', 'exit 3 wins over words in the message');
 
     const timedOut = ok(request(one), { args: ['--json', '--timeout', '1'], env: { VULN_STUB_MODE: 'sleep' } }).response.targets[0];
     assert.equal(timedOut.unavailable.reason, 'network');
@@ -399,7 +421,12 @@ test('R6: request validation', () => {
         JSON.stringify(request([{ key: '', dir: base, lockfile: 'package-lock.json' }])),
         JSON.stringify(request(['not-an-object'])),
         JSON.stringify(request(valid, { includeDev: 'yes' })),
-        JSON.stringify(request(valid, { policyPath: 7 }))
+        JSON.stringify(request(valid, { policyPath: 7 })),
+        ...['policyPath', 'annotatePolicyPath', 'remoteRepoUrl', 'includeDev'].map((field) => {
+            const missing = request(valid);
+            delete missing[field];
+            return JSON.stringify(missing);
+        })
     ];
     for (const input of malformed) {
         const result = gate(input);

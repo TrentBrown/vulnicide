@@ -162,8 +162,12 @@ in `dir`, and writes one response to stdout:
 
   The command still exits 0. `testsConsumed` is 1 when Snyk completed a test
   (exit 0 or 1), else 0.
-- **Failure:** a request that isn't a JSON object with uniquely keyed
-  `targets`, or a missing `--json`, exits 2 with nothing on stdout.
+- **Failure:** these exit 2 with nothing on stdout:
+  - a request that isn't a JSON object with uniquely keyed `targets`;
+  - a schemaVersion 1 request without a boolean `includeDev`, or with a
+    `policyPath`, `annotatePolicyPath` or `remoteRepoUrl` that is missing or
+    neither a string nor null;
+  - a missing `--json`.
 - **What it never does:** write files, need `node_modules`, pass `--debug`, or
   copy Snyk's error text, org, org ID or project path into its output.
   `unavailable.detail` is written by vulnicide: a fixed description, the exit
