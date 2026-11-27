@@ -1,0 +1,9 @@
+node_modules/
+build/
+*.code-workspace
+.dccache
+.DS_Store
+*.tgz
+
+# Claude settings
+.claude/settings.local.json

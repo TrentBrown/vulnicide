@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+// Offline stand-in for Snyk's CLI, used only by the smoke test.
+// It replays captured JSON so `npm test` spends no Snyk test quota.
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'snyk');
+const args = process.argv.slice(2);
+
+if (process.env.VULN_STUB_LOG) {
+    fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({ cwd: process.cwd(), args })}\n`);
+}
+
+let fixture;
+if (args[0] === 'code' && args[1] === 'test') {
+    fixture = fs.existsSync('package.json') ? 'code-node.sarif.json' : 'code-python.sarif.json';
+} else if (args[0] === 'test') {
+    fixture = 'deps-node.json';
+} else {
+    console.error(`snyk stub: unsupported arguments: ${args.join(' ')}`);
+    process.exit(2);
+}
+
+process.stdout.write(fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
+// Snyk exits 1 when it finds issues. Set exitCode rather than calling
+// process.exit() so the piped stdout is fully flushed first.
+process.exitCode = 1;

@@ -1,0 +1,15 @@
+# Snyk (https://snyk.io) policy file for this repository (the vulnicide CLI itself).
+# The policy template that `vulnicide policy init` writes into target projects is
+# assets/.snyk-template.
+version: v1.25.0
+
+exclude:
+  global:
+    - build/**
+  code:
+    - node_modules/**
+    - test/**
+    - examples/**
+    - assets/**
+
+ignore: {}

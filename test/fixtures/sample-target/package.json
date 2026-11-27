@@ -1,0 +1,11 @@
+{
+  "name": "vuln-sample-target",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deliberately vulnerable sample target for the vulnicide CLI smoke test. Never deploy.",
+  "type": "commonjs",
+  "dependencies": {
+    "lodash": "4.17.20",
+    "minimist": "1.2.0"
+  }
+}

@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+// Offline stand-in for snyk-to-html, used only by the smoke test.
+import fs from 'fs';
+
+const args = process.argv.slice(2);
+const input = args[args.indexOf('--input') + 1];
+const output = args[args.indexOf('--output') + 1];
+const data = JSON.parse(fs.readFileSync(input, 'utf-8'));
+fs.writeFileSync(output, `<!doctype html><title>stub report</title><pre>${Object.keys(data).join(', ')}</pre>\n`);

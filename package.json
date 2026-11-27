@@ -1,0 +1,50 @@
+{
+  "name": "@trentbrown/vulnicide",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Snyk-driven vulnerability scanning and model-friendly remediation packets",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TrentBrown/vulnicide.git"
+  },
+  "bin": {
+    "vulnicide": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "docs/*.md",
+    "examples",
+    "assets",
+    "skills",
+    "scripts"
+  ],
+  "scripts": {
+    "setup": "npm run setup:tools && npm run setup:skills",
+    "setup:tools": "npm install -g snyk snyk-to-html",
+    "setup:skills": "node scripts/install-skills.js",
+    "cli": "node src/index.js",
+    "start": "node ./src/index.js",
+    "test": "node --test test/*.test.js",
+    "test:install": "bash test/install-check.sh"
+  },
+  "dependencies": {
+    "qp-cli-core": "^1.7.1",
+    "chalk": "^6.0.0",
+    "commander": "^15.0.0",
+    "js-yaml": "^5.2.3",
+    "open": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "keywords": [
+    "vulnerability",
+    "scanner",
+    "security",
+    "snyk",
+    "cli"
+  ],
+  "author": "Trent Brown",
+  "license": "MIT"
+}

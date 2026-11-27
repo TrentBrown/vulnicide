@@ -1,0 +1,38 @@
+# Snyk (https://snyk.io) policy file
+version: v1.25.0
+exclude:
+  code:
+    # Standard directory exclusions
+    - node_modules/**
+    - bin/**
+    - test/**
+    - tests/**
+    - tools/**
+    - coverage/**
+    - dist/**
+    - build/**
+    - .git/**
+    - .vscode/**
+    - .idea/**
+    - tmp/**
+    - temp/**
+    - '*.min.js'
+    - vendor/**
+    - public/**
+    - static/**
+    - assets/**
+    - examples/**
+    - docs/**
+    - '*.test.js'
+    - '*.spec.js'
+    - __tests__/**
+    - __mocks__/**
+  global:
+    - dist/**
+    - build/**
+ignore:
+  # Example: Ignore a specific vulnerability
+  # 'SNYK-JS-EXAMPLE-123456':
+  #   - '*':
+  #       reason: 'This vulnerability is not applicable to our use case because...'
+  #       expires: 2099-01-01T00:00:00.000Z
