@@ -74,6 +74,53 @@ test('help -r lists every command group', () => {
     }
 });
 
+test('help shows the immediate subcommands, -r the whole tree, -r <depth> a limited one', () => {
+    const shallow = vuln('help');
+    assert.match(shallow, /^vulnicide Snyk-driven/m);
+    assert.match(shallow, /^ {4}deps Manage dependency vulnerability scanning$/m);
+    assert.doesNotMatch(shallow, /^ {8}gate /m, 'help without -r does not descend into deps');
+    assert.match(shallow, /Legend:/);
+
+    const full = vuln('help', '-r');
+    assert.match(full, /^ {8}gate GateReeve scanning mode/m);
+    assert.match(full, /^ {12}--json Required/m);
+    assert.match(full, /^ {12}--timeout <seconds> Per-target snyk test timeout in seconds \(default: 600\)$/m);
+    assert.doesNotMatch(full, /^ {8}help Show help for this command/m, 'per-command help subcommands stay hidden');
+
+    const depthOne = vuln('help', '-r', '1');
+    assert.match(depthOne, /^ {4}deps /m);
+    assert.doesNotMatch(depthOne, /^ {8}gate /m);
+});
+
+test('help <path>, <command> help and <command> --help print that command\'s tree', () => {
+    for (const args of [['help', 'deps'], ['deps', 'help'], ['deps', '--help'], ['--help', 'deps']]) {
+        const output = vuln(...args);
+        assert.match(output, /^deps Manage dependency vulnerability scanning$/m, args.join(' '));
+        assert.match(output, /^ {4}gate GateReeve scanning mode/m, args.join(' '));
+        assert.match(output, /^ {8}--json Required/m, `${args.join(' ')} shows leaf options`);
+    }
+    assert.match(vuln('help', 'deps'), /Help options for this command:\n {2}help deps\n {2}deps help\n/);
+    assert.match(vuln('deps', 'help'), /Help options for this command:\n {2}help deps\n {2}deps help\n {2}deps --help\n/);
+
+    const leaf = vuln('deps', 'gate', '--help');
+    assert.match(leaf, /^deps gate GateReeve scanning mode/m);
+    assert.match(leaf, /^ {4}--timeout <seconds>/m);
+    assert.match(vuln('deps', 'help', '-r'), /^ {4}gate GateReeve/m);
+});
+
+test('help for an unknown command path exits 1', () => {
+    for (const args of [['help', 'nope'], ['help', 'deps', 'nope']]) {
+        const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf-8', env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' } });
+        assert.equal(result.status, 1, args.join(' '));
+        assert.match(result.stderr, new RegExp(`Command path '${args.slice(1).join(' ')}' not found\\.`));
+    }
+});
+
+test('qp-cli-core is no longer a dependency', () => {
+    assert.ok(!('qp-cli-core' in (pkg.dependencies || {})));
+    assert.doesNotMatch(fs.readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf-8'), /qp-cli-core/);
+});
+
 test('policy init writes a generic .snyk from the template', () => {
     const output = vuln('policy', 'init', '--target', nodeTarget);
     assert.match(output, /Created \.snyk policy file/);

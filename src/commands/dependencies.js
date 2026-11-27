@@ -17,6 +17,8 @@ import { openInBrowser } from '../utils/browser.js';
 import { runSnykTest, generateHtmlReport } from '../utils/snyk.js';
 import { getCommandContext } from '../utils/context.js';
 import { REMEDIATION_GUIDE } from '../utils/paths.js';
+import { runGateCommand, DEFAULT_GATE_TIMEOUT_SECONDS } from './gate.js';
+import { indexUpgradeRemediation, collectUpgradeAdvice } from '../utils/upgrade-advice.js';
 import path from 'path';
 import { load as loadYaml } from 'js-yaml';
 
@@ -55,6 +57,14 @@ export function dependenciesCommands(program) {
         .description('Build model-friendly remediation packets from the dependencies audit JSON')
         .action(async (_options, command) => {
             await explainDependencies(getCommandContext(command));
+        });
+
+    deps.command('gate')
+        .description('GateReeve scanning mode: read a JSON request on stdin, write normalized findings JSON to stdout')
+        .option('--json', 'Required: read the request on stdin and write the response as JSON')
+        .option('--timeout <seconds>', 'Per-target snyk test timeout in seconds', String(DEFAULT_GATE_TIMEOUT_SECONDS))
+        .action(async (options) => {
+            process.exitCode = await runGateCommand(options);
         });
 
     deps.command('rebuild')
@@ -309,23 +319,6 @@ function collectPolicyIgnores(snykPolicy) {
     return ignores;
 }
 
-function indexUpgradeRemediation(upgradeRemediation) {
-    const byVuln = new Map();
-    for (const [dependency, advice] of Object.entries(upgradeRemediation)) {
-        for (const vulnId of advice.vulns || []) {
-            if (!byVuln.has(vulnId)) {
-                byVuln.set(vulnId, []);
-            }
-            byVuln.get(vulnId).push({
-                dependency,
-                upgradeTo: advice.upgradeTo,
-                upgrades: advice.upgrades || []
-            });
-        }
-    }
-    return byVuln;
-}
-
 function groupVulnerabilities(vulnerabilities) {
     const groups = new Map();
     for (const vulnerability of vulnerabilities) {
@@ -338,21 +331,6 @@ function groupVulnerabilities(vulnerabilities) {
         groups.get(key).vulnerabilities.push(vulnerability);
     }
     return groups;
-}
-
-function collectUpgradeAdvice(vulnerabilityIds, upgradeRemediationByVuln) {
-    const seen = new Set();
-    const advice = [];
-    for (const id of vulnerabilityIds) {
-        for (const entry of upgradeRemediationByVuln.get(id) || []) {
-            const key = `${entry.dependency}->${entry.upgradeTo}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                advice.push(entry);
-            }
-        }
-    }
-    return advice;
 }
 
 function classifyPacket({ group, directDependency, upgradeAdvice, unresolvedIds, vulnerabilityIds }) {

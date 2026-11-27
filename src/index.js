@@ -3,13 +3,13 @@
 import { readFileSync } from 'fs';
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { addTreeCommand } from 'qp-cli-core';
 import { summaryCommands } from './commands/summary.js';
 import { dependenciesCommands } from './commands/dependencies.js';
 import { codeCommands } from './commands/code.js';
 import { policyCommand } from './commands/policy.js';
 import { auditCommands } from './commands/audit.js';
 import { addTargetOption } from './utils/context.js';
+import { addTreeCommand } from './utils/help-tree.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
 
@@ -29,8 +29,8 @@ async function main() {
     policyCommand(program);
     auditCommands(program);
 
-    // Tree-style `help [commandPath...] [-r]` from qp-cli-core
-    addTreeCommand(program, { cliName: 'vulnicide' });
+    // Tree-style `help [commandPath...] [-r [depth]]`, `<command> help` and `--help`
+    addTreeCommand(program);
 
     // Add detailed help
     program.on('--help', () => {
@@ -39,6 +39,7 @@ async function main() {
         console.log('  vulnicide policy init --target ../app          Initialize .snyk policy file');
         console.log('  vulnicide deps build --target ../app           Scan dependencies for vulnerabilities');
         console.log('  vulnicide deps explain --target ../app         Build dependency remediation packets');
+        console.log('  vulnicide deps gate --json < request.json      GateReeve gate scan: JSON request in, findings JSON out');
         console.log('  vulnicide code build --target ../app           Scan code for security issues');
         console.log('  vulnicide code explain --target ../app         Build code remediation packets');
         console.log('  vulnicide audit open --target ../app           Create/open the remediation audit log');
