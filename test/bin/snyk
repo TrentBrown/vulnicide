@@ -1,9 +1,18 @@
 #!/usr/bin/env node
-// Offline stand-in for Snyk's CLI, used only by the smoke test.
+// Offline stand-in for Snyk's CLI, used only by the tests.
 // It replays captured JSON so `npm test` spends no Snyk test quota.
 //
-// Environment controls for `snyk code test` (all optional):
-//   VULN_STUB_LOG              append {tool, cwd, args} per call (JSON lines)
+// Environment knobs (tests only):
+//   VULN_STUB_LOG           append {cwd, args} per call to this JSONL file
+//   VULN_STUB_DEPS_FIXTURE  replay this file for `snyk test` instead of
+//                           fixtures/snyk/deps-node.json
+//   VULN_STUB_TEST_EXIT     exit code for `snyk test` replays (default 1)
+//   VULN_STUB_MODE          make `snyk test` fail the way Snyk does:
+//                           auth | quota | network | no-project |
+//                           no-project-noisy | garbage |
+//                           error | sleep | leak
+//   VULN_STUB_NO_VERSION=1  make `snyk --version` fail
+// For `snyk code test`:
 //   VULN_STUB_SNYK_CODE_FIXTURE  file in test/fixtures/snyk to replay
 //   VULN_STUB_SNYK_CODE_EXIT     exit code (default 1, as when issues are found)
 //   VULN_STUB_SNYK_CODE_STREAM   "stdout" (default) or "stderr"; real Snyk
@@ -20,26 +29,83 @@ if (process.env.VULN_STUB_LOG) {
     fs.appendFileSync(process.env.VULN_STUB_LOG, `${JSON.stringify({ tool: 'snyk', cwd: process.cwd(), args })}\n`);
 }
 
-let fixture;
-let exitCode = 1;
-let stream = process.stdout;
-if (args[0] === 'code' && args[1] === 'test') {
-    fixture = process.env.VULN_STUB_SNYK_CODE_FIXTURE
-        || (fs.existsSync('package.json') ? 'code-node.sarif.json' : 'code-python.sarif.json');
-    exitCode = Number(process.env.VULN_STUB_SNYK_CODE_EXIT ?? 1);
-    if (process.env.VULN_STUB_SNYK_CODE_STREAM === 'stderr') stream = process.stderr;
-} else if (args[0] === 'test') {
-    fixture = 'deps-node.json';
-} else {
-    console.error(`snyk stub: unsupported arguments: ${args.join(' ')}`);
-    process.exit(2);
+// Planted values a leak test looks for in vulnicide's output.
+const LEAK = {
+    token: process.env.SNYK_TOKEN || 'planted-token-value',
+    org: 'planted-org-name',
+    uuid: '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0'
+};
+
+function errorJson(message, extra = {}) {
+    process.stdout.write(`${JSON.stringify({ ok: false, error: message, path: process.cwd(), ...extra }, null, 2)}\n`);
 }
 
-if (args[0] === 'code' && process.env.VULN_STUB_SNYK_CODE_RAW !== undefined) {
-    stream.write(process.env.VULN_STUB_SNYK_CODE_RAW);
+if (args[0] === '--version') {
+    if (process.env.VULN_STUB_NO_VERSION === '1') {
+        console.error('snyk stub: version unavailable');
+        process.exitCode = 2;
+    } else {
+        process.stdout.write('1.1300.0\n');
+    }
+} else if (args[0] === 'code' && args[1] === 'test') {
+    const fixture = process.env.VULN_STUB_SNYK_CODE_FIXTURE
+        || (fs.existsSync('package.json') ? 'code-node.sarif.json' : 'code-python.sarif.json');
+    const stream = process.env.VULN_STUB_SNYK_CODE_STREAM === 'stderr' ? process.stderr : process.stdout;
+    stream.write(process.env.VULN_STUB_SNYK_CODE_RAW ?? fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
+    // Snyk exits 1 when it finds issues. Set exitCode rather than calling
+    // process.exit() so the piped output is fully flushed first.
+    process.exitCode = Number(process.env.VULN_STUB_SNYK_CODE_EXIT ?? 1);
+} else if (args[0] === 'test') {
+    switch (process.env.VULN_STUB_MODE || '') {
+        case 'auth':
+            errorJson(`Authentication failed. Please check the API token for org ${LEAK.org} (${LEAK.uuid}).`, { code: 401, errors: [{ code: 'SNYK-0005', title: 'Authentication error' }] });
+            process.exitCode = 2;
+            break;
+        case 'quota':
+            errorJson(`You have reached your monthly limit of 200 private tests for your ${LEAK.org} org.`);
+            process.exitCode = 2;
+            break;
+        case 'network':
+            console.error(`Error: getaddrinfo ENOTFOUND api.snyk.io (token ${LEAK.token})`);
+            process.exitCode = 2;
+            break;
+        case 'no-project':
+            errorJson(`Could not detect supported target files in ${process.cwd()}`);
+            process.exitCode = 3;
+            break;
+        case 'no-project-noisy':
+            errorJson('Could not detect supported target files in /scratch/network-proxy-quota-authentication');
+            process.exitCode = 3;
+            break;
+        case 'garbage':
+            process.stdout.write(`not json from ${LEAK.org}\n`);
+            process.exitCode = 1;
+            break;
+        case 'error':
+            errorJson(`Unexpected failure for org ${LEAK.uuid}`);
+            console.error(`stack trace mentioning ${LEAK.token}`);
+            process.exitCode = 2;
+            break;
+        case 'sleep':
+            setTimeout(() => {}, 60_000);
+            break;
+        case 'leak': {
+            const audit = JSON.parse(fs.readFileSync(path.join(fixtures, 'deps-node.json'), 'utf-8'));
+            audit.org = LEAK.org;
+            audit.path = process.cwd();
+            audit.policy = `# org ${LEAK.uuid} token ${LEAK.token}`;
+            process.stdout.write(JSON.stringify(audit));
+            console.error(`debug: token=${LEAK.token} org=${LEAK.org}`);
+            process.exitCode = 1;
+            break;
+        }
+        default: {
+            const fixture = process.env.VULN_STUB_DEPS_FIXTURE || path.join(fixtures, 'deps-node.json');
+            process.stdout.write(fs.readFileSync(fixture, 'utf-8'));
+            process.exitCode = Number(process.env.VULN_STUB_TEST_EXIT ?? 1);
+        }
+    }
 } else {
-    stream.write(fs.readFileSync(path.join(fixtures, fixture), 'utf-8'));
+    console.error(`snyk stub: unsupported arguments: ${args.join(' ')}`);
+    process.exitCode = 2;
 }
-// Snyk exits 1 when it finds issues. Set exitCode rather than calling
-// process.exit() so the piped output is fully flushed first.
-process.exitCode = exitCode;

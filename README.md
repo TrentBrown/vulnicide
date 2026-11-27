@@ -92,6 +92,7 @@ Every command scans the current directory unless you pass `--target <dir>`.
 vulnicide policy init --target ../my-app     # write a starter .snyk policy
 vulnicide deps build --target ../my-app      # snyk test  -> build/dependencies/
 vulnicide deps explain --target ../my-app    # -> remediation-packets.{json,md}
+vulnicide deps gate --json < request.json    # GateReeve gate scan: JSON in, findings JSON out
 vulnicide code build --target ../my-app      # opengrep (local) -> build/code/
 vulnicide code explain --target ../my-app    # -> remediation-packets.{json,md}
 vulnicide audit open --target ../my-app      # create/open docs/vulnerability-remediation-log.md
@@ -103,10 +104,12 @@ vulnicide help -r                            # full command tree
 | `policy init [--force]` / `open` / `print` | Create the target's `.snyk` from [the generic template](assets/.snyk-template), open it, or print it |
 | `deps build` / `rebuild` / `clean` / `browse` | Run `snyk test --json` in the target, write `build/dependencies/audit-dependencies.{json,html}` plus a minimal summary JSON |
 | `deps explain` | Group findings by package@version into `D-###` packets with severity, direct/transitive status, Snyk upgrade advice and existing ignores |
+| `deps gate --json [--timeout <seconds>]` | Scanning mode for GateReeve's dependency-scan gate: read a request on stdin, run one `snyk test` per target, write normalized findings JSON to stdout. Writes no files. See [Gate mode](#gate-mode) |
 | `code build` / `rebuild` / `clean` / `browse` | Scan the target's source with Opengrep (default) or Snyk Code (`--engine snyk`). Write `build/code/audit-code.{json,html}` (SARIF and a report), a minimal summary JSON, and the outcome file `scan-result.json` |
 | `code explain` | Turn each SARIF result into a `C-###` packet with the rule, location, data flow and classification |
 | `audit path` / `open` | Print the target's remediation log path, or create it from [the template](assets/vulnerability-remediation-log-template.md) and open it |
 | `summary build` / `browse` / `clean` | Build `vuln/dist/index.html` linking the HTML reports |
+| `help [path...] [-r [depth]]` | Print the command tree from the root or the named command; `-r` recurses. `<command> help` and `<command> --help` do the same |
 
 `deps build` needs a Node (`package.json`, with `node_modules` installed) or
 Maven (`pom.xml`) project. `code build` works on any target.
@@ -186,6 +189,72 @@ for completed scans) and `startedAt`/`finishedAt`.
   now prefers the rule's CWE: for example, a Snyk command-injection finding
   (CWE-78) is now `input-validation`.
 
+### Gate mode
+
+`vulnicide deps gate --json` is the scanner side of GateReeve's dependency-scan
+gate (contract `schemaVersion: 1`). GateReeve writes each side's `package.json`
+and lockfile into scratch directories and calls it with a request on stdin:
+
+```json
+{"schemaVersion": 1, "includeDev": true,
+ "policyPath": "/scratch/base.snyk", "annotatePolicyPath": "/scratch/head.snyk",
+ "remoteRepoUrl": "https://github.com/owner/repo",
+ "targets": [{"key": "package.json#base", "dir": "/scratch/base", "lockfile": "package-lock.json"}]}
+```
+
+For each target, in order, it runs
+`snyk test --json [--dev] --file=<lockfile> [--policy-path=<policyPath>] [--remote-repo-url=<url>]`
+in `dir`, and writes one response to stdout:
+
+```json
+{"schemaVersion": 1, "tool": {"name": "vulnicide", "version": "1.3.0"},
+ "scanner": {"name": "snyk", "version": "1.1300.0"},
+ "targets": [{"key": "package.json#base", "status": "ok", "unavailable": null,
+   "testsConsumed": 1, "isPrivate": true,
+   "findings": [{"vulnId": "SNYK-JS-LODASH-1040724", "package": "lodash", "version": "4.17.20",
+     "severity": "high", "dev": false, "direct": true, "title": "Code Injection", "cvss": 7.2,
+     "fixedIn": ["4.17.21"], "paths": [["app@1.0.0", "lodash@4.17.20"]],
+     "upgradeAdvice": [{"dependency": "lodash@4.17.20", "upgradeTo": "lodash@4.18.1", "upgrades": ["lodash@4.17.20"]}],
+     "branchIgnore": null}]}]}
+```
+
+- **Findings:** one per (vulnId, package, version), with every distinct path.
+  License issues are left out. They are sorted by severity, then package,
+  version and vulnId.
+  - `direct` means some path reaches the package straight from the project.
+  - `dev` means `includeDev` is true and every path starts at a dependency
+    declared only in `devDependencies`.
+  - `upgradeAdvice` uses the same shape as `deps explain` packets.
+- **`branchIgnore`:** `{reason, expires, path}` from an unexpired ignore in the
+  `annotatePolicyPath` policy (the branch's `.snyk`) that matches the finding.
+  It is for display only. Only `policyPath` (the base `.snyk`) is passed to
+  Snyk.
+- **Unavailability is data.** When Snyk can't produce a result, the target's
+  `status` is `unavailable` with a `reason`:
+  - `not-installed` when `snyk` is missing;
+  - `not-authenticated`;
+  - `quota-exceeded` when the test limit is reached;
+  - `network`, which includes the per-target timeout (600 s; `--timeout`
+    overrides it);
+  - `unsupported` when there is no supported project or lockfile, or the
+    request's `schemaVersion` is unknown;
+  - `scanner-error` for anything else, including a bad target `dir` or
+    lockfile.
+
+  The command still exits 0. `testsConsumed` is 1 when Snyk completed a test
+  (exit 0 or 1), else 0.
+- **Failure:** these exit 2 with nothing on stdout:
+  - a request that isn't a JSON object with uniquely keyed `targets`;
+  - a schemaVersion 1 request without a boolean `includeDev`, or with a
+    `policyPath`, `annotatePolicyPath` or `remoteRepoUrl` that is missing or
+    neither a string nor null;
+  - a missing `--json`.
+- **What it never does:** write files, need `node_modules`, pass `--debug`, or
+  copy Snyk's error text, org, org ID or project path into its output.
+  `unavailable.detail` is written by vulnicide: a fixed description, the exit
+  code and any Snyk error code such as `SNYK-0005`. `SNYK_TOKEN` is read by
+  `snyk` from the environment.
+
 ### Configuration
 
 The target project can set `projectId`, `buildDir` (default `build`),
@@ -239,14 +308,19 @@ every command there:
 - `policy`: init, print, open;
 - `audit`: path, open.
 
-It also tests path containment (including symlink escapes) and the skill
-installer. `test/code-engine.test.js` covers both code engines: engine
-selection, arguments, outcomes and exit codes, failure classification,
-thresholds, reports and packets, for `build` and `rebuild`.
+It also tests path containment (including symlink escapes), the help tree
+and the skill installer. `test/gate.test.js` covers `deps gate`: arguments,
+response shape, normalization, branch ignores, every unavailability reason,
+request validation, no writes and no leaks. Its fixture variants (a dev-only
+path, a license issue, a critical finding) are derived from the captured
+`deps-node.json` at run time. `test/code-engine.test.js` covers both code
+engines: engine selection, arguments, outcomes and exit codes, failure
+classification, thresholds, reports and packets, for `build` and `rebuild`.
 
 Stub `opengrep`, `snyk` and `snyk-to-html` binaries in `test/bin` replay
-sanitized output captured from real runs, so the tests are offline, need no
-real scanner and spend no Snyk quota.
+sanitized output captured from real runs, or fail the way Snyk does
+(`VULN_STUB_MODE`), so the tests are offline, need no real scanner and spend no
+Snyk quota.
 
 The fixtures are **deliberately vulnerable** (lodash 4.17.20, minimist 1.2.0,
 and command-injection/XSS sample code). The repo's own `.snyk` excludes `test/`

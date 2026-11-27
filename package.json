@@ -30,7 +30,6 @@
     "test:install": "bash test/install-check.sh"
   },
   "dependencies": {
-    "qp-cli-core": "^1.7.1",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "js-yaml": "^5.2.3",

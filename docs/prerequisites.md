@@ -8,10 +8,6 @@ Check these before a scanning session, or when provisioning a new host.
    node --version
    ```
 
-   Installing from git warns `EBADENGINE` because the `qp-cli-core` dependency
-   pins an exact Node version. The warning is harmless: `vulnicide` is tested on
-   Node 24.
-
 2. **`vulnicide` itself** (see the [README](../README.md#install)):
 
    ```bash

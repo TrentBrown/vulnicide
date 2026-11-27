@@ -8,15 +8,18 @@ code engine) and Snyk's `snyk` CLI (dependencies, and code with
 ## Layout
 
 - `src/index.js`: entry point (Commander). It registers command modules and
-  adds qp-cli-core's tree-style `help [path...] [-r]`.
+  adds the tree-style `help [path...] [-r [depth]]` from
+  `src/utils/help-tree.js`.
 - `src/commands/`: `dependencies.js` (`deps`), `code.js` (`code`), `policy.js`,
   `audit.js`, `summary.js`. `deps explain` and `code explain` build the
-  remediation packets.
+  remediation packets. `gate.js` is `deps gate --json`, GateReeve's
+  dependency-scan gate scanner: JSON request on stdin, normalized findings on
+  stdout, unavailability as data, no writes, no raw Snyk error text.
 - `src/utils/`: `opengrep.js` (version gate, scan arguments, failure
-  classification), `snyk.js` (spawns `snyk`/`snyk-to-html`; `runSnykCodeScan`
-  classifies Snyk Code failures, while the deps runner is unchanged),
-  `code-report.js` (self-contained Opengrep HTML), `process.js` (spawn and
-  capture), `context.js`
+  classification), `snyk.js` (spawns `snyk`/`snyk-to-html`; `spawnSnyk` never
+  throws, for the gate; `runSnykCodeScan` classifies Snyk Code failures),
+  `upgrade-advice.js` (shared by explain and gate), `code-report.js`
+  (self-contained Opengrep HTML), `process.js` (spawn and capture), `context.js`
   (`--target` resolution; `joinProjectPath` for anything written or deleted,
   symlink-checked; `readProjectPath` for read-only inputs), `config.js` (`.vulnrc.json` / package.json `vuln`),
   `browser.js` (opening, honouring `VULN_NO_OPEN`), `paths.js` (package-root
@@ -27,10 +30,11 @@ code engine) and Snyk's `snyk` CLI (dependencies, and code with
   `scripts/install-skills.js` copies it into `~/.codex` and `~/.agents`.
 - `docs/`: `remediation.md` (policy and workflow), `prerequisites.md`,
   `test-usage.md` (Snyk plan-limit accounting).
-- `test/`: offline smoke test, `code-engine.test.js` (both code engines),
-  stub `opengrep`/`snyk`/`snyk-to-html` binaries, sample targets, captured
-  Snyk JSON and Opengrep SARIF (`test/fixtures/opengrep/README.md` records
-  their provenance and hand edits).
+- `test/`: offline smoke and gate tests, `code-engine.test.js` (both code
+  engines), stub `opengrep`/`snyk`/`snyk-to-html` binaries (the Snyk stub has
+  `VULN_STUB_MODE` failure modes), sample targets, captured Snyk JSON and
+  Opengrep SARIF (`test/fixtures/opengrep/README.md` records their provenance
+  and hand edits).
 
 ## Rules
 
@@ -50,6 +54,9 @@ code engine) and Snyk's `snyk` CLI (dependencies, and code with
 - The fixtures under `test/fixtures` are deliberately vulnerable. Don't
   "fix" them.
 - User-facing hints say `vulnicide ...`, not `npm run cli -- ...`.
+- The `deps gate` response is a versioned contract with GateReeve
+  (`schemaVersion: 1`). Don't change its fields or meanings without a
+  GateReeve contract amendment.
 - Dependency majors (chalk 6, commander 15, js-yaml 5, open 11) are ESM-only.
   js-yaml 5 has no default export: use `import { load } from 'js-yaml'`.
 

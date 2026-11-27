@@ -123,6 +123,55 @@ export async function generateHtmlReport(jsonPath, htmlPath, options = {}) {
     });
 }
 
+// Run `snyk` and report what happened without throwing: the gate mode turns
+// every outcome, including a missing binary or a timeout, into data.
+// Resolves { exitCode, stdout, stderr, spawnError, timedOut }. Colour is
+// switched off so JSON output and error messages stay plain.
+export function spawnSnyk(args, { cwd, timeoutMs } = {}) {
+    return new Promise((resolve) => {
+        let child;
+        try {
+            child = spawn('snyk', args, {
+                cwd: cwd || process.cwd(),
+                env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+        } catch (error) {
+            resolve({ exitCode: null, stdout: '', stderr: '', spawnError: error, timedOut: false });
+            return;
+        }
+
+        let stdout = '';
+        let stderr = '';
+        let timedOut = false;
+        let settled = false;
+        let killTimer = null;
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            clearTimeout(killTimer);
+            resolve(result);
+        };
+        const timer = timeoutMs > 0
+            ? setTimeout(() => {
+                timedOut = true;
+                child.kill('SIGTERM');
+                killTimer = setTimeout(() => child.kill('SIGKILL'), 2000);
+            }, timeoutMs)
+            : null;
+
+        child.stdout.on('data', (data) => { stdout += data.toString(); });
+        child.stderr.on('data', (data) => { stderr += data.toString(); });
+        child.on('error', (error) => {
+            finish({ exitCode: null, stdout, stderr, spawnError: error, timedOut });
+        });
+        child.on('close', (code) => {
+            finish({ exitCode: code, stdout, stderr, spawnError: null, timedOut });
+        });
+    });
+}
+
 async function runSnykCommand(args, options = {}) {
     return new Promise((resolve, reject) => {
         const child = spawn('snyk', args, {

@@ -31,6 +31,9 @@ expected="$(node -p "require('$repo/package.json').version")"
 actual="$("$bin/vulnicide" --version)"
 [[ "$actual" == "$expected" ]] || { echo "version $actual != $expected" >&2; exit 1; }
 "$bin/vulnicide" help -r | grep -q "explain"
+"$bin/vulnicide" help deps | grep -q "gate"
+# The gate answers an unknown schemaVersion without needing snyk at all.
+echo '{"schemaVersion":0,"targets":[{"key":"probe"}]}' | "$bin/vulnicide" deps gate --json | grep -q '"reason":"unsupported"'
 
 for file in assets/.snyk-template assets/vulnerability-remediation-log-template.md docs/remediation.md skills/remediate-vuln/SKILL.md scripts/install-skills.js; do
   [[ -f "$pkgdir/$file" ]] || { echo "missing $file in installed package" >&2; exit 1; }
@@ -43,4 +46,4 @@ VULN_NO_OPEN=1 "$bin/vulnicide" audit open --target "$target" >/dev/null
 grep -q '^version: v1\.' "$target/.snyk"
 [[ -f "$target/docs/vulnerability-remediation-log.md" ]]
 
-echo "OK: vulnicide $actual installed from $spec; binaries, packaged assets, policy init and audit open verified"
+echo "OK: vulnicide $actual installed from $spec; binaries, packaged assets, gate mode, policy init and audit open verified"

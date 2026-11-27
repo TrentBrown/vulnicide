@@ -35,6 +35,21 @@ no separate rule for `snyk monitor`. Treat it as a CLI-triggered test too.
 directory, which tests one manifest. A multi-manifest repository costs one test
 per directory you build.
 
+`vulnicide deps gate --json` (GateReeve's dependency-scan gate) runs one plain
+`snyk test --file=<lockfile>` per request target, so it costs one test per
+target. GateReeve sends at most two targets (base and head) for each manifest
+the branch touched. It sends none when no manifest changed or when it reuses an
+earlier result. Each target in the response
+reports `testsConsumed`:
+- 1 when Snyk completed a test (exit 0 or 1), even if its output was
+  unusable;
+- 0 when the test never ran, or Snyk refused it (auth, quota, network,
+  timeout, unsupported).
+
+It also passes through Snyk's `isPrivate`, which says whether Snyk treated the
+project as private. Only private projects count against the plan limits. A quota refusal is reported as
+`unavailable: quota-exceeded`, not as an error exit.
+
 ## 2. Snyk Code: one test per repository scanned
 
 The same page defines Code usage as "the number of repositories scanned by the
@@ -102,7 +117,9 @@ per-commit mandatory Open Source scan of every manifest is not sustainable on
 the Free plan. Options:
 
 - Scan only the manifests a change touches (`vulnicide deps build --target <dir>`
-  or `snyk test --file=<manifest>`): 1 test each.
+  or `snyk test --file=<manifest>`): 1 test each. GateReeve's gate does this
+  through `vulnicide deps gate --json`, at 2 tests per touched manifest (base
+  and head).
 - Run the full `--all-projects` sweep on a schedule (for example weekly) rather
   than per change.
 - Make the repo public and register its public remote (section 4): no limits.
